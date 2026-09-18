@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>坐席工作台 · Live（对接 nk3c-demo API）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 1020px; }
+  .topbar { background: #173a5e; color: #fff; flex: 0 0 auto; }
+  .topbar .row1 { display: flex; align-items: center; gap: 14px; padding: 8px 14px; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .live-tag { background: #27863c; border-radius: 3px; font-size: 11px; padding: 1px 7px; font-weight: bold; }
+  .spacer { flex: 1; }
+  .agent-chip { background: rgba(255,255,255,.12); border-radius: 14px; padding: 3px 12px; font-size: 12px; }
+  .calltimer { font-family: Consolas, monospace; font-size: 16px; background: rgba(255,255,255,.12); padding: 2px 10px; border-radius: 4px; }
+  .state-badge { padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; background: #7a8ba0; }
+  .st-READY{background:#27863c} .st-AUX{background:#b9770e} .st-DIALING,.st-RINGING{background:#6c3fc5}
+  .st-TALKING{background:#c0392b} .st-ACW{background:#2e6da4} .st-LOGOUT{background:#7a8ba0}
+  .softbar { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: #1f4f7a; flex-wrap: wrap; }
+  .sbtn { border: 1px solid rgba(255,255,255,.45); background: transparent; color: #fff; border-radius: 4px; padding: 5px 14px; cursor: pointer; font-size: 13px; }
+  .sbtn:hover:not(:disabled) { background: rgba(255,255,255,.15); }
+  .sbtn:disabled { opacity: .35; cursor: not-allowed; }
+  .sbtn.warn { border-color: #f0b27a; color: #f8d0a4; }
+  .sbtn.danger { border-color: #e89a9a; color: #f3c1c1; }
+  .main { flex: 1; display: flex; min-height: 0; }
+  .col-left { flex: 0 0 250px; background: #fff; border-right: 1px solid #dfe4ea; overflow-y: auto; }
+  .col-mid { flex: 1; background: #f2f5f9; overflow-y: auto; padding: 14px; }
+  .col-right { flex: 0 0 300px; background: #fff; border-left: 1px solid #dfe4ea; overflow-y: auto; display: flex; flex-direction: column; }
+  .panel-h { padding: 9px 12px; font-weight: bold; color: #173a5e; background: #eef3f9; border-bottom: 1px solid #dfe4ea; display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 2; }
+  .panel-h .tag { font-weight: normal; font-size: 11px; color: #7d8ca0; }
+  .pad { padding: 12px; }
+  .kv { display: flex; margin-bottom: 6px; font-size: 12.5px; }
+  .kv .k { flex: 0 0 76px; color: #7d8ca0; }
+  .kv .v { flex: 1; }
+  .sec-ttl { font-size: 12px; color: #4a6a94; font-weight: bold; margin: 14px 0 6px; }
+  .q-tip { color: #98a4b3; font-size: 12px; margin-top: 10px; line-height: 1.8; }
+  .q-progress { height: 8px; background: #dfe8f2; border-radius: 4px; overflow: hidden; margin-bottom: 14px; }
+  .q-progress i { display: block; height: 100%; background: #2e6da4; width: 0; transition: width .25s; }
+  .q-card { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; padding: 20px 22px; }
+  .q-no { color: #4a6a94; font-size: 12px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; }
+  .q-no .req { color: #c0392b; font-weight: bold; }
+  .q-title { font-size: 17px; line-height: 1.6; margin-bottom: 16px; }
+  .q-opts label { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #dfe4ea; border-radius: 5px; margin-bottom: 8px; cursor: pointer; background: #fbfcfe; font-size: 14px; }
+  .q-opts label:hover { border-color: #2e6da4; background: #eef5fc; }
+  .q-opts input[type=number] { width: 180px; border: 1px solid #d0d7de; border-radius: 4px; padding: 8px 10px; font-size: 14px; }
+  .q-note { color: #c0392b; font-size: 13px; min-height: 20px; margin-top: 8px; }
+  .q-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .abtn { border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 4px; padding: 8px 22px; cursor: pointer; font-size: 14px; }
+  .abtn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .abtn.primary:hover { background: #25598a; }
+  .abtn:disabled { opacity: .4; cursor: not-allowed; }
+  .empty-mid { text-align: center; color: #98a4b3; padding: 70px 30px; line-height: 2.2; }
+  .empty-mid .big { font-size: 42px; }
+  .res-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px 12px; }
+  .rc { border: 1px solid #d0d7de; background: #fff; border-radius: 4px; padding: 7px 4px; cursor: pointer; font-size: 12px; text-align: center; }
+  .rc:hover:not(:disabled) { border-color: #2e6da4; color: #2e6da4; }
+  .rc:disabled { opacity: .3; cursor: not-allowed; }
+  .rc.good { border-color: #bfdcc7; color: #27863c; font-weight: bold; }
+  .rc.appt { border-color: #d8c9ec; color: #6c3fc5; }
+  .logbox { flex: 1; overflow-y: auto; font-family: Consolas, monospace; font-size: 11.5px; color: #556; padding: 8px 12px; line-height: 1.8; }
+  .logbox .t { color: #9aa7b6; margin-right: 6px; }
+  .logbox .ok{color:#27863c} .logbox .warn{color:#b9770e} .logbox .err{color:#c0392b} .logbox .sys{color:#6c3fc5}
+  .simbar { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px dashed #e3e8ee; flex-wrap: wrap; align-items: center; }
+  .simbar .sbtn { border-color: #c9d4e0; color: #4a6a94; font-size: 11.5px; padding: 3px 8px; }
+  .statusbar { flex: 0 0 28px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center; gap: 20px; padding: 0 14px; color: #667; font-size: 12px; }
+  .toast { position: fixed; top: 74px; right: 18px; z-index: 60; background: #173a5e; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.25); display: none; max-width: 340px; }
+  .toast.force { background: #b9770e; } .toast.err { background: #c0392b; } .toast.ok { background: #27863c; }
+  .qc-banner { display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 70; text-align: center; font-size: 13px; font-weight: bold; padding: 7px 12px; color: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
+  .qc-banner.listen { background: #b9770e; } .qc-banner.insert { background: #27863c; }
+  .qc-banner.danger { background: #c0392b; } .qc-banner.info { background: #2e6da4; }
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 360px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  .modal .mhead { padding: 14px 16px; border-bottom: 1px solid #eef1f5; font-weight: bold; color: #173a5e; }
+  .modal .mbody { padding: 14px 16px; }
+  .modal .mbody input { width: 100%; border: 1px solid #d0d7de; border-radius: 4px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; }
+  .modal .merr { color: #c0392b; font-size: 12px; min-height: 16px; margin-bottom: 6px; }
+  .hist-item { font-size: 12px; color: #667; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="qc-banner" id="qcBanner"></div>
+  <div class="topbar">
+    <div class="row1">
+      <div class="logo">坐席工作台 <small>对接 nk3c-demo API</small></div>
+      <span class="live-tag">LIVE</span>
+      <div class="spacer"></div>
+      <div class="agent-chip" id="agentChip">未签入</div>
+      <div class="calltimer" id="callTimer">00:00:00</div>
+      <div class="state-badge st-LOGOUT" id="stateBadge">未签入</div>
+    </div>
+    <div class="softbar">
+      <button class="sbtn" id="btnLogin" onclick="showLogin()">签 入</button>
+      <button class="sbtn danger" id="btnLogout" onclick="logout()" disabled>签 出</button>
+      <button class="sbtn warn" id="btnAux" onclick="toggleAux()" disabled>示 忙</button>
+      <button class="sbtn danger" id="btnHangup" onclick="hangup()" disabled>挂 断</button>
+      <span class="q-tip" style="margin:0 0 0 12px;color:#cfe2f3">派样/过滤/配额/统计均由后端真实计算 · 种子样本 101/106 可派</span>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="col-left">
+      <div class="panel-h">样本信息 <span class="tag" id="sidTag"></span></div>
+      <div class="pad" id="samplePanel"><div class="q-tip" style="padding:16px 4px">签入后由服务器派样。<br>过滤规则：黑名单 / 半年原则(180天) / 重拨上限(3次)。</div></div>
+    </div>
+
+    <div class="col-mid" id="midCol">
+      <div class="empty-mid">
+        <div class="big">☎</div>
+        点击【签 入】登录（演示账号 agent01 / 123456）<br>
+        签入后服务器自动派样 → 呼叫 → 逐题作答（实时入库）→ 提交结果码<br>
+        <span class="q-tip">本页为真实前后端贯通：所有数据来自 nk3c-demo API（Swagger 见 /docs）</span>
+      </div>
+    </div>
+
+    <div class="col-right">
+      <div class="panel-h">电话结束状态码 <span class="tag">挂机后提交</span></div>
+      <div class="res-grid">
+        <button class="rc good" id="rc-SUCCESS"  onclick="submitResult('SUCCESS')" disabled>访问成功</button>
+        <button class="rc"      id="rc-PARTIAL"  onclick="submitResult('PARTIAL')" disabled>部分完成</button>
+        <button class="rc"      id="rc-QUFAIL"   onclick="submitResult('QUFAIL')" disabled>甄别不合格</button>
+        <button class="rc"      id="rc-REFUSE"   onclick="submitResult('REFUSE')" disabled>拒 访</button>
+        <button class="rc"      id="rc-BREAKOFF" onclick="submitResult('BREAKOFF')" disabled>中途挂断</button>
+        <button class="rc appt" id="rc-APPOINT"  onclick="submitResult('APPOINT')" disabled>预约回拨</button>
+        <button class="rc"      id="rc-NA"       onclick="submitResult('NA')" disabled>无人接听</button>
+        <button class="rc"      id="rc-BUSY"     onclick="submitResult('BUSY')" disabled>占 线</button>
+        <button class="rc"      id="rc-INVALID"  onclick="submitResult('INVALID')" disabled>空 号</button>
+        <button class="rc"      id="rc-FAX"      onclick="submitResult('FAX')" disabled>传真/数据线</button>
+      </div>
+      <div class="panel-h">系统日志 <span class="tag">API 交互留痕</span></div>
+      <div class="logbox" id="logbox"></div>
+      <div class="simbar">
+        <button class="sbtn" onclick="openReset()">↺ 重置演示数据</button>
+        <a class="sbtn" style="text-decoration:none;text-align:center" href="/supervisor">督导控制台</a>
+        <a class="sbtn" style="text-decoration:none;text-align:center" href="/docs" target="_blank">API 文档</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span>状态：<b id="sbState">未签入</b></span>
+    <span>本次会话 呼叫：<b id="sbDial">0</b></span>
+    <span>成功：<b id="sbOk" style="color:#27863c">0</b></span>
+    <span>其他：<b id="sbFail" style="color:#b9770e">0</b></span>
+    <span style="margin-left:auto">nk3c-demo · FastAPI + SQLite · 蓝图核心闭环</span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* =========================================================
+ * 坐席工作台 Live 版：全部业务数据来自 nk3c-demo API
+ *   登录 /api/auth/login → 派样 /api/agent/dispatch
+ *   作答 /api/agent/answer（每题实时入库）→ 结果码 /api/agent/result（幂等+去向+配额）
+ * 前端只负责状态机展示；过滤/配额/统计全部服务端计算。
+ * ========================================================= */
+
+var RESULT_LABELS = {
+  SUCCESS:'访问成功', PARTIAL:'部分完成', QUFAIL:'甄别不合格', REFUSE:'拒访', BREAKOFF:'中途挂断',
+  APPOINT:'预约回拨', NA:'无人接听', BUSY:'占线', INVALID:'空号', FAX:'传真/数据线'
+};
+var ST_TEXT = { LOGOUT:'未签入', READY:'就绪(示闲)', AUX:'示忙', DIALING:'外呼中', RINGING:'振铃', TALKING:'通话中', ACW:'后处理' };
+
+var token = '';
+var me = null;
+var st = { state:'LOGOUT', aux:false, call:null, sample:null, qnr:null, qIdx:0, answers:0,
+           callSec:0, dial:0, ok:0, fail:0, phoneIdx:0, timer:null, busy:false };
+
+function $id(x){ return document.getElementById(x); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nowStr(){ return new Date().toLocaleTimeString('zh-CN',{hour12:false}); }
+function fmt(sec){ var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60,p=function(n){return(n<10?'0':'')+n;}; return p(h)+':'+p(m)+':'+p(s); }
+
+function toast(msg, cls, ms){
+  var t=$id('toast'); t.innerHTML=msg; t.className='toast '+(cls||''); t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(function(){t.style.display='none';}, ms||3600);
+}
+function log(msg, cls){
+  var box=$id('logbox'); var div=document.createElement('div');
+  div.innerHTML='<span class="t">'+nowStr()+'</span><span class="'+(cls||'')+'">'+msg+'</span>';
+  box.appendChild(div); box.scrollTop=box.scrollHeight;
+}
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({'Content-Type':'application/json'},
+    token ? {'Authorization':'Bearer '+token} : {}, opts.headers || {});
+  if (opts.body && typeof opts.body !== 'string') opts.body = JSON.stringify(opts.body);
+  var res;
+  try { res = await fetch(path, opts); }
+  catch(e){
+    toast('无法连接 API：请在【NK3C API 演示服务】预览中打开本页（/agent）','err',6000);
+    throw e;
+  }
+  if (res.status === 401){ setLogout('会话失效，请重新签入'); throw new Error('401'); }
+  var j = await res.json();
+  if (res.status >= 500) { toast('服务器错误：'+esc(j.detail||j.message||''),'err'); throw new Error('500'); }
+  return j;
+}
+
+/* ── 状态机 ── */
+function setState(s){
+  st.state = s;
+  $id('stateBadge').textContent = ST_TEXT[s];
+  $id('stateBadge').className = 'state-badge st-'+s;
+  $id('sbState').textContent = ST_TEXT[s];
+  updateButtons();
+}
+function updateButtons(){
+  var s = st.state;
+  $id('btnLogin').disabled  = s!=='LOGOUT';
+  $id('btnLogout').disabled = s==='LOGOUT';
+  $id('btnAux').disabled    = !(s==='READY'||s==='AUX');
+  $id('btnHangup').disabled = !(s==='TALKING'||s==='RINGING');
+  var canResult = (s==='TALKING'||s==='ACW');
+  Object.keys(RESULT_LABELS).forEach(function(c){ $id('rc-'+c).disabled = !canResult; });
+  $id('btnAux').textContent = st.aux ? '示 闲' : '示 忙';
+}
+function startTimer(){
+  stopTimer(); st.callSec=0; $id('callTimer').textContent='00:00:00';
+  st.timer=setInterval(function(){ st.callSec+=1; $id('callTimer').textContent=fmt(st.callSec); },1000);
+}
+function stopTimer(){ clearInterval(st.timer); }
+
+function setLogout(msg){
+  token=''; me=null; stopTimer();
+  if(agentWs){ try{ agentWs.onclose=null; agentWs.close(); }catch(e){} agentWs=null; }
+  setState('LOGOUT'); st.aux=false;
+  $id('agentChip').textContent='未签入';
+  $id('samplePanel').innerHTML='<div class="q-tip" style="padding:16px 4px">已签出。</div>';
+  $id('midCol').innerHTML='<div class="empty-mid"><div class="big">☎</div>'+(msg||'已签出')+'<br>点击【签 入】重新开始</div>';
+  if(msg) toast(msg,'force');
+}
+
+/* ── 坐席实时通道（/ws/agent）：接收督导实时质检指令（S5）── */
+var agentWs = null;
+function connectAgentWS(){
+  if(agentWs){ try{ agentWs.close(); }catch(e){} }
+  var proto = location.protocol==='https:' ? 'wss://' : 'ws://';
+  agentWs = new WebSocket(proto+location.host+'/ws/agent?token='+encodeURIComponent(token));
+  agentWs.onmessage = function(ev){
+    var m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    if(m.type==='qc') handleQc(m.data||{});
+  };
+  agentWs.onclose = function(){ if(token) setTimeout(connectAgentWS, 3000); };  // 断线重连
+}
+function showBanner(text, cls, ms){
+  var b=$id('qcBanner'); b.innerHTML=text; b.className='qc-banner '+(cls||'info'); b.style.display='block';
+  clearTimeout(b._h); if(ms) b._h=setTimeout(function(){ b.style.display='none'; }, ms);
+}
+function handleQc(d){
+  var who = d.by || '督导';
+  log('【实时质检】'+d.actionName+'（by '+esc(who)+'）'+(d.note?' 备注：'+esc(d.note):''),'sys');
+  if(d.action==='LISTEN'){ showBanner('🎧 '+esc(who)+' 正在监听本通话'+(d.note?'（'+esc(d.note)+'）':''),'listen',8000); }
+  else if(d.action==='INSERT'){ showBanner('💬 '+esc(who)+' 已插话，请倾听现场指示'+(d.note?'（'+esc(d.note)+'）':''),'insert',10000); }
+  else if(d.action==='SETBUSY'){ st.aux=true; setState('AUX'); showBanner('🚫 '+esc(who)+' 将您置为【示忙】，暂不参与派样','info',8000); }
+  else if(d.action==='SETIDLE'){ st.aux=false; setState('READY'); showBanner('✅ '+esc(who)+' 将您置为【示闲】，恢复派样','info',8000);
+    if(!st.sample) dispatch(); }
+  else if(d.action==='FORCEHANGUP'){
+    showBanner('📴 '+esc(who)+' 已强制挂断本通话，请提交结果码','danger',10000);
+    if(st.state==='TALKING') hangup();
+  }
+  else if(d.action==='FORCECHECKOUT'){
+    if(agentWs){ try{ agentWs.onclose=null; agentWs.close(); }catch(e){} }
+    setLogout('已被 '+esc(who)+' 强制签出'+(d.note?'：'+esc(d.note):''));
+  }
+}
+
+/* ── 登录 ── */
+function showLogin(){
+  $id('modalRoot').innerHTML = '<div class="mask"><div class="modal">'+
+    '<div class="mhead">坐席签入 · nk3c-demo</div><div class="mbody">'+
+    '<div class="merr" id="loginErr"></div>'+
+    '<input id="lgName" value="agent01" placeholder="登录名（agent01 / sup01 / admin）">'+
+    '<input id="lgPass" type="password" value="123456" placeholder="密码">'+
+    '<div class="q-tip" style="margin:0">签入即登录 API 并自动派样（演示账号密码均为 123456）</div></div>'+
+    '<div class="mfoot"><button class="abtn" onclick="closeModal()">取消</button>'+
+    '<button class="abtn primary" id="lgBtn" onclick="doLogin()">签 入</button></div></div></div>';
+  setTimeout(function(){ $id('lgName').focus(); }, 50);
+}
+async function doLogin(){
+  var btn=$id('lgBtn'); btn.disabled=true;
+  $id('loginErr').textContent='';
+  try{
+    var r = await api('/api/auth/login',{method:'POST',body:{loginName:$id('lgName').value.trim(),password:$id('lgPass').value}});
+    if(!r.success){ $id('loginErr').textContent=r.message; btn.disabled=false; return; }
+    token=r.data.sessionId; me=r.data;
+    closeModal();
+    $id('agentChip').textContent='工号 '+(me.agentNo||'-')+' · '+me.userName+' · '+me.roles.join('/');
+    log('签入成功（POST /api/auth/login）角色：'+me.roles.join(','),'ok');
+    setState('READY');
+    connectAgentWS();
+    dispatch();
+  }catch(e){ $id('loginErr').textContent='网络异常或服务不可达'; btn.disabled=false; }
+}
+function closeModal(){ $id('modalRoot').innerHTML=''; }
+function logout(){
+  if(st.state==='TALKING'||st.state==='RINGING'){ alert('有进行中话务，不能签出'); return; }
+  log('签出（演示版不调服务端，会话保留）','sys');
+  setLogout('已签出');
+}
+function toggleAux(){
+  st.aux=!st.aux;
+  setState(st.aux?'AUX':'READY');
+  log(st.aux?'示忙：不参与派样':'示闲：恢复派样','warn');
+  if(!st.aux && !st.sample && st.state==='READY') dispatch();
+}
+
+/* ── 派样 ── */
+async function dispatch(){
+  if(st.state!=='READY' || st.sample || st.busy) return;
+  st.busy=true;
+  try{
+    var r = await api('/api/agent/dispatch');
+    st.busy=false;
+    if(!r.success){ log('派样失败：'+esc(r.message),'err'); return; }
+    if(!r.data){
+      log('派样：'+esc(r.message),'warn');
+      $id('midCol').innerHTML='<div class="empty-mid"><div class="big">📦</div>'+esc(r.message)+
+        '<br><span class="q-tip">提示：点击右下角【↺ 重置演示数据】恢复种子样本池</span></div>';
+      $id('samplePanel').innerHTML='<div class="q-tip" style="padding:16px 4px">样本池已空。</div>';
+      return;
+    }
+    var d=r.data;
+    st.sample=d; st.phoneIdx=0; st.qIdx=0; st.answers=0; st.qnr=d.questionnaire;
+    log('派样成功：样本 '+d.sampleId+' '+esc(d.custName)+'（callId='+d.callId+'，服务器已加派样锁）','sys');
+    renderSample(); renderIdle();
+  }catch(e){ st.busy=false; }
+}
+function renderSample(){
+  var d=st.sample;
+  $id('sidTag').textContent='样本 '+d.sampleId;
+  var html='<div class="kv"><div class="k">姓名</div><div class="v">'+esc(d.custName)+'</div></div>'+
+    '<div class="kv"><div class="k">性别</div><div class="v">'+esc(d.gender)+'</div></div>'+
+    '<div class="kv"><div class="k">已呼次数</div><div class="v">'+d.attempts+' / 3（重拨上限）</div></div>'+
+    '<div class="sec-ttl">电话号码（一人多号，按序呼叫）</div>';
+  d.phones.forEach(function(p,i){
+    html+='<div class="kv"><div class="k">号码'+(i+1)+'</div><div class="v">'+esc(p)+
+      (i===st.phoneIdx?' <b style="color:#27863c">← 本次呼叫</b>':'')+
+      (d.phones.length>1?' <a href="javascript:void(0)" onclick="switchPhone('+i+')" style="font-size:11px">[换号]</a>':'')+'</div></div>';
+  });
+  html+='<div class="sec-ttl">问卷</div><div class="q-tip" style="margin-top:0">《'+esc(st.qnr.title)+'》'+esc(st.qnr.version)+
+    ' · '+st.qnr.questions.length+' 题（服务端下发）</div>';
+  $id('samplePanel').innerHTML=html;
+}
+function switchPhone(i){ st.phoneIdx=i; log('换号：改呼第 '+(i+1)+' 个号码 '+esc(st.sample.phones[i])); renderSample(); }
+function renderIdle(){
+  $id('midCol').innerHTML='<div class="empty-mid"><div class="big">📞</div>样本 <b>'+esc(st.sample.sampleId)+'</b> 已派给本坐席（服务器锁定）'+
+    '<br>呼叫号码：'+esc(st.sample.phones[st.phoneIdx])+
+    '<br><button class="abtn primary" style="margin-top:14px;padding:10px 34px" onclick="dial()">☎ 呼 叫</button></div>';
+}
+
+/* ── 呼叫（本地振铃动画；接通以后端首题提交为准） ── */
+function dial(){
+  if(st.state!=='READY') return;
+  st.dial+=1; $id('sbDial').textContent=st.dial;
+  setState('DIALING');
+  log('外呼 '+esc(st.sample.phones[st.phoneIdx])+'（演示：本地振铃动画，接通由首题提交落库）','sys');
+  setTimeout(function(){
+    if(st.state!=='DIALING') return;
+    setState('RINGING');
+    setTimeout(function(){
+      if(st.state!=='RINGING') return;
+      connected();
+    },1400);
+  },900);
+}
+function connected(){
+  setState('TALKING'); startTimer();
+  log('接通（演示 100% 接通率）。问卷已弹出，请开始访问。','ok');
+  toast('呼叫已接通，请按屏幕逐题提问。');
+  renderQuestion();
+}
+
+/* ── 问卷渲染与作答（每题实时提交 API） ── */
+function renderQuestion(){
+  var q=st.qnr.questions[st.qIdx];
+  var html='<div class="q-progress"><i style="width:'+Math.round(st.qIdx/st.qnr.questions.length*100)+'%"></i></div>'+
+    '<div class="q-card"><div class="q-no">第 '+(st.qIdx+1)+' / '+st.qnr.questions.length+' 题 · '+esc(q.type)+
+    (q.required?' <span class="req">*必答</span>':'')+
+    '<span class="q-tip" style="margin-left:auto">通话计时 '+fmt(st.callSec)+'</span></div>'+
+    '<div class="q-title">'+esc(q.title)+'</div><div class="q-opts" id="qBody">'+qBody(q)+'</div>'+
+    '<div class="q-note" id="qErr"></div>'+
+    '<div class="q-actions"><button class="abtn" onclick="prevQ()" '+((st.qIdx===0)?'disabled':'')+'>← 上一题</button>'+
+    '<button class="abtn primary" id="nextBtn" onclick="nextQ()">下一题 →</button></div>'+
+    '<div class="q-tip">· 本题提交即实时写入服务器（ans_answer），断线可续答</div></div>';
+  $id('midCol').innerHTML=html;
+}
+function qBody(q){
+  var html='';
+  if(q.type==='single'){
+    q.options.forEach(function(o){
+      html+='<label><input type="radio" name="q" value="'+o.optionId+'"> '+esc(o.text)+'</label>';
+    });
+  }else if(q.type==='number'){
+    html+='<input type="number" id="qNum" min="'+(q.min==null?'':q.min)+'" max="'+(q.max==null?'':q.max)+'">（'+(q.min==null?'-∞':q.min)+' ~ '+(q.max==null?'+∞':q.max)+'）';
+  }else{
+    html+='<input type="text" id="qText" placeholder="文本作答">';
+  }
+  return html;
+}
+function readAnswer(q){
+  if(q.type==='single'){
+    var r=document.querySelector('input[name=q]:checked');
+    return r ? {optionIds:[Number(r.value)]} : null;
+  }
+  if(q.type==='number'){
+    var v=$id('qNum').value;
+    if(v==='') return null;
+    var n=Number(v);
+    if(q.min!=null && n<q.min) return {error:'数值不能小于 '+q.min};
+    if(q.max!=null && n>q.max) return {error:'数值不能大于 '+q.max};
+    return {numericValue:n};
+  }
+  var t=($id('qText')&&$id('qText').value.trim())||'';
+  return t?{answerText:t}:null;
+}
+async function nextQ(){
+  var q=st.qnr.questions[st.qIdx];
+  var a=readAnswer(q);
+  if(a && a.error){ $id('qErr').textContent=a.error; return; }
+  if(q.required && !a){ $id('qErr').textContent='本题必答，请作答后再继续。'; return; }
+  $id('nextBtn').disabled=true;
+  try{
+    var body=Object.assign({callId:st.sample.callId,questionId:q.questionId},a||{});
+    var r=await api('/api/agent/answer',{method:'POST',body:body});
+    if(!r.success){ $id('qErr').textContent=r.message; $id('nextBtn').disabled=false; return; }
+    if(a) st.answers+=1;
+    log('Q'+(st.qIdx+1)+' 已实时入库（POST /api/agent/answer）','ok');
+    if(st.qIdx+1>=st.qnr.questions.length){ qDone(); return; }
+    st.qIdx+=1; renderQuestion();
+  }catch(e){ $id('nextBtn').disabled=false; }
+}
+function prevQ(){ if(st.qIdx>0){ st.qIdx-=1; renderQuestion(); } }
+function qDone(){
+  $id('midCol').innerHTML='<div class="empty-mid"><div class="big">📝</div>问卷作答完成（共 '+st.answers+' 题已入库）<br>'+
+    '请在右侧选择<b>电话结束状态码</b>提交<br><span class="q-tip">访问成功将触发服务端配额原子扣减；答卷进入待审核</span></div>';
+}
+function hangup(){
+  if(st.state==='RINGING'){ toast('演示版振铃必接通'); return; }
+  if(st.state!=='TALKING') return;
+  stopTimer(); setState('ACW');
+  log('挂断：通话时长 '+fmt(st.callSec)+'；请提交结果码','warn');
+  $id('midCol').innerHTML='<div class="empty-mid"><div class="big">🧾</div>通话已结束（'+fmt(st.callSec)+'）<br>请在右侧提交结果码</div>';
+}
+
+/* ── 结果码提交 ── */
+async function submitResult(code){
+  if(st.state!=='TALKING'&&st.state!=='ACW') return;
+  if(!confirm('确认提交结果码【'+RESULT_LABELS[code]+'】？\n提交后服务器将判定样本去向'+(code==='SUCCESS'?'并执行配额扣减':'')+'。')) return;
+  Object.keys(RESULT_LABELS).forEach(function(c){ $id('rc-'+c).disabled=true; });
+  try{
+    var r=await api('/api/agent/result',{method:'POST',body:{callId:st.sample.callId,resultCode:code}});
+    if(!r.success){ toast('提交失败：'+esc(r.message),'err'); updateButtons(); return; }
+    var d=r.data;
+    st.fail += (code==='SUCCESS'?0:1); st.ok += (code==='SUCCESS'?1:0);
+    $id('sbOk').textContent=st.ok; $id('sbFail').textContent=st.fail;
+    log('结果码 '+code+' → 样本 '+d.sampleId+' 去向：<b>'+esc(d.destination)+'</b>'+
+      (d.sheetStatus?'，答卷 '+esc(d.sheetStatus):'')+
+      (d.quotaConsume?'，配额 '+esc(d.quotaConsume):'')+
+      (d.duplicate?'（幂等：返回首写结果）':''),'ok');
+    toast('已提交：'+RESULT_LABELS[code]+'<br>样本 → '+esc(d.destination)+
+      (d.quotaConsume?'<br>配额：'+esc(d.quotaConsume):''),'ok',5200);
+    st.sample=null; st.qnr=null;
+    setState('READY');
+    $id('midCol').innerHTML='<div class="empty-mid"><div class="big">🔄</div>后处理完成，正在取下一样本…</div>';
+    setTimeout(dispatch,1200);
+  }catch(e){ updateButtons(); }
+}
+
+/* ── 重置演示数据（domainAdmin） ── */
+async function openReset(){
+  var pwd=prompt('输入 admin 密码以重置演示数据（恢复种子样本池/配额）','123456');
+  if(pwd===null) return;
+  try{
+    var lr=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({loginName:'admin',password:pwd})}).then(function(r){return r.json();});
+    if(!lr.success){ toast('重置失败：'+esc(lr.message),'err'); return; }
+    var rr=await fetch('/api/sys/reset',{method:'POST',
+      headers:{'Authorization':'Bearer '+lr.data.sessionId}}).then(function(r){return r.json();});
+    if(!rr.success){ toast('重置失败：'+esc(rr.message),'err'); return; }
+    toast('演示数据已重置，请重新签入','ok');
+    log('系统重置（POST /api/sys/reset）：样本池/配额/话务已恢复种子状态','sys');
+    setTimeout(function(){ location.reload(); },1500);
+  }catch(e){ toast('网络异常','err'); }
+}
+
+/* ── 初始 ── */
+log('=== 坐席工作台 Live 版已加载 ===');
+log('数据源：nk3c-demo API（本服务）· 打开 /docs 查看 OpenAPI 文档','sys');
+log('签入后：派样(真实过滤) → 作答(实时入库) → 结果码(去向/配额由服务端判定)','sys');
+setState('LOGOUT');
+</script>
+</body>
+</html>

@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>问卷设计器交互原型 · ITACATI 电访专家风格</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 980px; }
+
+  /* ── 顶部工具栏 ─────────────────────────── */
+  .topbar { background: #1f3a5f; color: #fff; padding: 0 14px; flex: 0 0 auto; }
+  .topbar .row1 { display: flex; align-items: center; gap: 14px; padding: 8px 0; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .qtitle input { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); color: #fff; padding: 4px 8px; border-radius: 3px; width: 220px; font-size: 13px; }
+  .qtitle input::placeholder { color: rgba(255,255,255,.5); }
+  .meta { font-size: 12px; opacity: .85; }
+  .spacer { flex: 1; }
+  .btn { display: inline-block; border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 3px; padding: 4px 12px; cursor: pointer; font-size: 12px; line-height: 18px; }
+  .btn:hover { border-color: #1f6fb2; color: #1f6fb2; }
+  .btn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .btn.primary:hover { background: #25598a; color: #fff; }
+  .btn.danger { color: #c0392b; border-color: #e0b4b4; }
+  .btn.danger:hover { background: #fdf0ef; }
+  .btn.mini { padding: 1px 7px; font-size: 12px; }
+  .topbar .btn { background: transparent; border-color: rgba(255,255,255,.4); color: #fff; }
+  .topbar .btn:hover { background: rgba(255,255,255,.12); }
+  .topbar .btn.publish { background: #e67e22; border-color: #e67e22; }
+  .topbar .row2 { display: flex; gap: 6px; padding-bottom: 8px; flex-wrap: wrap; }
+
+  /* ── 主体三栏 ─────────────────────────── */
+  .main { flex: 1; display: flex; min-height: 0; }
+  .left { flex: 0 0 210px; background: #fff; border-right: 1px solid #dfe4ea; display: flex; flex-direction: column; }
+  .tabs { display: flex; border-bottom: 1px solid #dfe4ea; }
+  .tabs .tab { flex: 1; text-align: center; padding: 8px 0; cursor: pointer; color: #667; border-bottom: 2px solid transparent; }
+  .tabs .tab.on { color: #1f3a5f; font-weight: bold; border-bottom-color: #1f3a5f; background: #f7f9fc; }
+  .panel { flex: 1; overflow-y: auto; padding: 10px; }
+  .qt-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e3e8ee; border-radius: 4px; margin-bottom: 7px; cursor: pointer; background: #fbfcfe; }
+  .qt-item:hover { border-color: #2e6da4; background: #eef5fc; }
+  .qt-item .ico { width: 22px; height: 22px; border-radius: 4px; background: #1f3a5f; color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+  .bank-item { border: 1px dashed #c9d4e0; border-radius: 4px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; background: #fff; }
+  .bank-item:hover { border-color: #e67e22; background: #fffaf3; }
+  .bank-item b { display: block; margin-bottom: 3px; }
+  .bank-item span { color: #888; font-size: 12px; }
+
+  .canvas-wrap { flex: 1; overflow-y: auto; background: #eef1f5; padding: 16px 20px 60px; }
+  .qcard { background: #fff; border: 1px solid #dfe4ea; border-left: 4px solid #b8c4d4; border-radius: 4px; margin-bottom: 12px; padding: 10px 14px; cursor: pointer; position: relative; }
+  .qcard:hover { border-color: #9fb6d0; }
+  .qcard.sel { border-color: #2e6da4; border-left-color: #2e6da4; box-shadow: 0 1px 6px rgba(46,109,164,.25); }
+  .qhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .qno { font-weight: bold; color: #1f3a5f; }
+  .qtype-tag { background: #eef3f9; color: #4a6a94; font-size: 11px; border-radius: 3px; padding: 1px 6px; }
+  .badge { font-size: 11px; border-radius: 3px; padding: 1px 6px; }
+  .badge.req { background: #fdeaea; color: #c0392b; }
+  .badge.rand { background: #eaf7ed; color: #27863c; }
+  .badge.jump { background: #fdf3e3; color: #b9770e; }
+  .badge.qa { background: #f0eaf9; color: #6c3fc5; }
+  .qtitle-text { font-size: 14px; margin: 2px 0 6px; }
+  .opt-line { color: #555; padding: 2px 0 2px 4px; }
+  .opt-line .jumparr { color: #b9770e; font-size: 12px; margin-left: 6px; }
+  .qops { position: absolute; right: 10px; top: 8px; display: none; gap: 4px; }
+  .qcard:hover .qops, .qcard.sel .qops { display: flex; }
+  .canvas-tip { text-align: center; color: #98a4b3; padding: 40px 0; }
+  .drop-hint { border: 2px dashed #b8c4d4; border-radius: 6px; color: #98a4b3; text-align: center; padding: 18px 0; margin-bottom: 12px; }
+
+  .right { flex: 0 0 300px; background: #fff; border-left: 1px solid #dfe4ea; overflow-y: auto; padding: 12px; }
+  .props h3 { font-size: 13px; color: #1f3a5f; border-bottom: 1px solid #eef1f5; padding-bottom: 6px; margin-bottom: 10px; }
+  .frow { margin-bottom: 10px; }
+  .frow label { display: block; color: #667; margin-bottom: 4px; font-size: 12px; }
+  .frow input[type=text], .frow input[type=number], .frow select, .frow textarea {
+      width: 100%; border: 1px solid #d0d7de; border-radius: 3px; padding: 5px 8px; font-size: 13px; font-family: inherit; }
+  .frow textarea { resize: vertical; min-height: 54px; }
+  .checks { display: flex; gap: 16px; font-size: 12px; color: #555; padding: 2px 0; }
+  .checks label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .opt-edit { border: 1px solid #e3e8ee; border-radius: 4px; padding: 6px; margin-bottom: 6px; background: #fbfcfe; }
+  .opt-edit .line1 { display: flex; gap: 6px; margin-bottom: 5px; }
+  .opt-edit .line2 { display: flex; gap: 6px; align-items: center; }
+  .opt-edit input.opttext { flex: 1; border: 1px solid #d0d7de; border-radius: 3px; padding: 4px 6px; font-size: 12px; }
+  .opt-edit select { flex: 1; border: 1px solid #d0d7de; border-radius: 3px; padding: 4px; font-size: 12px; }
+  .hint { color: #98a4b3; font-size: 12px; line-height: 1.7; }
+  .subttl { font-size: 12px; color: #4a6a94; font-weight: bold; margin: 12px 0 6px; }
+
+  /* ── 状态栏 ─────────────────────────── */
+  .statusbar { flex: 0 0 28px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center; gap: 20px; padding: 0 14px; color: #667; font-size: 12px; }
+
+  /* ── 弹窗 ─────────────────────────── */
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.45); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 640px; max-width: 92vw; max-height: 86vh; display: flex; flex-direction: column; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .modal.wide { width: 780px; }
+  .modal .mhead { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #eef1f5; }
+  .modal .mhead b { font-size: 14px; color: #1f3a5f; }
+  .modal .mhead .x { margin-left: auto; cursor: pointer; color: #98a4b3; font-size: 18px; line-height: 1; }
+  .modal .mbody { padding: 14px 16px; overflow-y: auto; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
+  .issue { display: flex; gap: 8px; padding: 7px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 12px; }
+  .issue.err { background: #fdeaea; color: #a93226; }
+  .issue.warn { background: #fdf6e3; color: #9a7d0a; }
+  .issue.ok { background: #eaf7ed; color: #27863c; }
+
+  /* 预览界面（模拟坐席端问卷） */
+  .pv-wrap { background: #f4f7fb; border: 1px solid #dfe8f2; border-radius: 6px; padding: 18px; }
+  .pv-prog { height: 6px; background: #dfe8f2; border-radius: 3px; margin-bottom: 14px; overflow: hidden; }
+  .pv-prog i { display: block; height: 100%; background: #2e6da4; width: 0; transition: width .25s; }
+  .pv-qno { color: #4a6a94; font-size: 12px; margin-bottom: 4px; }
+  .pv-title { font-size: 16px; margin-bottom: 12px; }
+  .pv-opts label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #dfe4ea; border-radius: 4px; margin-bottom: 6px; cursor: pointer; background: #fff; font-size: 14px; }
+  .pv-opts label:hover { border-color: #2e6da4; }
+  .pv-note { color: #98a4b3; font-size: 12px; margin-top: 8px; }
+  .pv-table { border-collapse: collapse; width: 100%; margin-bottom: 8px; }
+  .pv-table th, .pv-table td { border: 1px solid #dfe4ea; padding: 6px 8px; font-size: 12px; text-align: center; }
+  .pv-table th { background: #f7f9fc; }
+  .pv-end { text-align: center; padding: 30px 0 16px; }
+  .pv-end .big { font-size: 40px; }
+
+  @media print {
+    .topbar, .left, .right, .statusbar, .qops { display: none !important; }
+    .canvas-wrap { background: #fff; overflow: visible; }
+    .main { display: block; }
+    .qcard { break-inside: avoid; border: none; border-bottom: 1px solid #ccc; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶部工具栏 -->
+  <div class="topbar">
+    <div class="row1">
+      <div class="logo">问卷设计器 <small>ITACATI · 电访专家风格交互原型</small></div>
+      <div class="qtitle"><input id="svyTitle" value="客户满意度调查_2026"></div>
+      <div class="meta" id="svyMeta">版本 v1.0 · 状态：草稿</div>
+      <div class="spacer"></div>
+      <button class="btn" onclick="saveSurvey()">保存</button>
+    </div>
+    <div class="row2">
+      <button class="btn primary" onclick="openPreview()">▶ 预览（模拟坐席作答）</button>
+      <button class="btn" onclick="openValidate()">✓ 逻辑校验</button>
+      <button class="btn" onclick="openQuota()">▦ 配额设置</button>
+      <button class="btn" onclick="document.getElementById('importFile').click()">⬆ 导入</button>
+      <button class="btn" onclick="exportJson()">⬇ 导出 JSON</button>
+      <button class="btn" onclick="window.print()">🖨 打印问卷</button>
+      <button class="btn publish" onclick="publish()">发布</button>
+      <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJson(event)">
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- 左栏：题型库 / 题库 -->
+    <div class="left">
+      <div class="tabs">
+        <div class="tab on" id="tabQt" onclick="switchTab('qt')">题型库</div>
+        <div class="tab" id="tabBank" onclick="switchTab('bank')">常用题库</div>
+      </div>
+      <div class="panel" id="leftPanel"></div>
+    </div>
+
+    <!-- 中栏：画布 -->
+    <div class="canvas-wrap">
+      <div id="canvas"></div>
+    </div>
+
+    <!-- 右栏：属性面板 -->
+    <div class="right" id="props"></div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="statusbar" id="statusbar"></div>
+</div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* =========================================================
+ * 问卷设计器交互原型（ITACATI 风格）
+ * 数据结构：
+ *   survey = { title, version, status, questions[] }
+ *   question = { qid, type, title, required, random,
+ *                options:[{oid,text,jump}],   // single/multi/sort
+ *                rows:[], cols:[],            // matrix
+ *                min, max, maxLen, unit, scaleMax, note }
+ *   option.jump: 'next' | 'end' | qid
+ * ========================================================= */
+
+var QTYPES = {
+  single: { name: '单选题',  ico: '单', hasOptions: true },
+  multi:  { name: '多选题',  ico: '多', hasOptions: true },
+  sort:   { name: '排序题',  ico: '排', hasOptions: true },
+  text:   { name: '开放题',  ico: '文' },
+  number: { name: '数字题',  ico: '数' },
+  date:   { name: '日期题',  ico: '日' },
+  scale:  { name: '刻度题',  ico: '刻' },
+  matrix: { name: '矩阵题',  ico: '矩', hasRowsCols: true },
+  info:   { name: '说明题',  ico: '说' }
+};
+
+var BANK = [
+  { type: 'single', title: '总体而言，您对××的满意程度是？', options: ['非常满意','比较满意','一般','不太满意','很不满意'] },
+  { type: 'single', title: '您向亲友推荐××的可能性有多大？（0-10分）', scaleLike: true, options: ['0','1','2','3','4','5','6','7','8','9','10'] },
+  { type: 'multi',  title: '您接触过××的哪些渠道？（可多选）', options: ['服务热线','营业厅','官方网站','微信公众号','APP'] },
+  { type: 'text',   title: '您对××还有什么意见或建议？（开放题）' },
+  { type: 'info',   title: '【甄别语】您好，这里是××调查中心，正在进行的访问大约需要3分钟，方便现在开始吗？' }
+];
+
+var survey = {
+  title: '客户满意度调查_2026',
+  version: 'v1.0',
+  status: '草稿',
+  questions: []
+};
+var selectedQid = null;
+var savedText = '未保存更改';
+var seq = 0;
+
+/* ── 基础工具 ─────────────────────────── */
+function uid(p) { seq += 1; return p + seq + '_' + Math.floor(Math.random() * 900 + 100); }
+function $(id) { return document.getElementById(id); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function qById(qid) {
+  for (var i = 0; i < survey.questions.length; i++) if (survey.questions[i].qid === qid) return survey.questions[i];
+  return null;
+}
+function qIndex(qid) {
+  for (var i = 0; i < survey.questions.length; i++) if (survey.questions[i].qid === qid) return i;
+  return -1;
+}
+
+/* ── 新建题目 ─────────────────────────── */
+function newQuestion(type) {
+  var q = {
+    qid: uid('q'), type: type, title: '',
+    required: type !== 'info', random: false,
+    options: [], rows: [], cols: [], note: ''
+  };
+  if (type === 'single' || type === 'multi' || type === 'sort') {
+    q.options = [
+      { oid: uid('o'), text: '选项1', jump: 'next' },
+      { oid: uid('o'), text: '选项2', jump: 'next' }
+    ];
+  }
+  if (type === 'matrix') { q.rows = ['行1', '行2']; q.cols = ['列1', '列2', '列3']; }
+  if (type === 'number') { q.min = 0; q.max = 100; }
+  if (type === 'text')   { q.maxLen = 200; }
+  if (type === 'scale')  { q.scaleMax = 10; }
+  if (type === 'date')   { q.unit = 'yyyy-mm-dd'; }
+  return q;
+}
+function addQuestion(type) {
+  var q = newQuestion(type);
+  survey.questions.push(q);
+  selectedQid = q.qid;
+  dirty();
+  render();
+}
+function addFromBank(i) {
+  var b = BANK[i];
+  var q = newQuestion(b.type);
+  q.title = b.title;
+  if (b.options) {
+    q.options = b.options.map(function (t) { return { oid: uid('o'), text: t, jump: 'next' }; });
+  }
+  if (b.scaleLike) { q.type = 'scale'; q.scaleMax = 10; q.options = []; }
+  survey.questions.push(q);
+  selectedQid = q.qid;
+  dirty();
+  render();
+}
+
+/* ── 题目操作 ─────────────────────────── */
+function selectQ(qid) { selectedQid = qid; renderCanvas(); renderProps(); }
+function moveQ(qid, dir) {
+  var i = qIndex(qid), j = i + dir;
+  if (i < 0 || j < 0 || j >= survey.questions.length) return;
+  var t = survey.questions[i]; survey.questions[i] = survey.questions[j]; survey.questions[j] = t;
+  dirty(); render();
+}
+function copyQ(qid) {
+  var i = qIndex(qid); if (i < 0) return;
+  var src = survey.questions[i];
+  var cp = JSON.parse(JSON.stringify(src));
+  cp.qid = uid('q');
+  cp.options = cp.options.map(function (o) { return { oid: uid('o'), text: o.text, jump: o.jump }; });
+  survey.questions.splice(i + 1, 0, cp);
+  selectedQid = cp.qid;
+  dirty(); render();
+}
+function delQ(qid) {
+  var i = qIndex(qid); if (i < 0) return;
+  if (!confirm('确认删除该题？指向该题的跳转逻辑将被重置为"下一题"。')) return;
+  survey.questions.splice(i, 1);
+  survey.questions.forEach(function (q) {
+    q.options.forEach(function (o) { if (o.jump === qid) o.jump = 'next'; });
+  });
+  if (selectedQid === qid) selectedQid = null;
+  dirty(); render();
+}
+function patchQ(qid, patch) {
+  var q = qById(qid); if (!q) return;
+  Object.keys(patch).forEach(function (k) { q[k] = patch[k]; });
+  dirty(); renderCanvas(); renderStatus();
+}
+function addOption(qid) {
+  var q = qById(qid); if (!q) return;
+  q.options.push({ oid: uid('o'), text: '选项' + (q.options.length + 1), jump: 'next' });
+  dirty(); render();
+}
+function delOption(qid, oid) {
+  var q = qById(qid); if (!q) return;
+  q.options = q.options.filter(function (o) { return o.oid !== oid; });
+  dirty(); render();
+}
+function patchOption(qid, oid, patch) {
+  var q = qById(qid); if (!q) return;
+  q.options.forEach(function (o) { if (o.oid === oid) Object.keys(patch).forEach(function (k) { o[k] = patch[k]; }); });
+  dirty();
+  renderCanvas(); renderProps();
+}
+function listText(v) { return (v || '').split('\n').map(function (s) { return s.trim(); }).filter(Boolean); }
+
+/* ── 左栏 ─────────────────────────── */
+var curTab = 'qt';
+function switchTab(t) {
+  curTab = t;
+  $('tabQt').className = 'tab' + (t === 'qt' ? ' on' : '');
+  $('tabBank').className = 'tab' + (t === 'bank' ? ' on' : '');
+  renderLeft();
+}
+function renderLeft() {
+  var html = '';
+  if (curTab === 'qt') {
+    Object.keys(QTYPES).forEach(function (k) {
+      html += '<div class="qt-item" onclick="addQuestion(\'' + k + '\')" title="点击追加到问卷末尾">' +
+        '<div class="ico">' + QTYPES[k].ico + '</div><div>' + QTYPES[k].name +
+        '<div class="hint">' + qtHint(k) + '</div></div></div>';
+    });
+    html += '<div class="hint" style="margin-top:10px">· 点击题型即追加到问卷末尾<br>· 支持逻辑校验与所见即所得预览<br>· 单选/多选支持逐选项跳转逻辑</div>';
+  } else {
+    BANK.forEach(function (b, i) {
+      html += '<div class="bank-item" onclick="addFromBank(' + i + ')"><b>' + esc(b.title) + '</b>' +
+        '<span>' + QTYPES[b.type].name + ' · 点击插入</span></div>';
+    });
+  }
+  $('leftPanel').innerHTML = html;
+}
+function qtHint(k) {
+  var m = {
+    single: '跳转/配额/随机轮换', multi: '限选/互斥/排他', sort: '按重要性排序',
+    text: '开放作答·事后编码', number: '数值范围校验', date: '日期格式校验',
+    scale: '0-10 刻度/NPS', matrix: '行×列矩阵勾选', info: '甄别语/概念卡展示'
+  };
+  return m[k] || '';
+}
+
+/* ── 画布 ─────────────────────────── */
+function jumpLabel(jump) {
+  if (!jump || jump === 'next') return '';
+  if (jump === 'end') return '→ 结束访问';
+  var q = qById(jump);
+  return '→ 跳 Q' + (q ? survey.questions.indexOf(q) + 1 : '?');
+}
+function renderCanvas() {
+  var c = $('canvas');
+  if (!survey.questions.length) {
+    c.innerHTML = '<div class="drop-hint">从左侧点击题型，开始设计问卷</div>' +
+      '<div class="canvas-tip">设计器支持：题干编辑 · 选项增删 · 逐选项跳转 · 必答校验 · 选项随机/轮换<br>' +
+      '题目矩阵题（行×列）· 数字题范围校验 · 所见即所得预览 · 逻辑校验 · 打印</div>';
+    return;
+  }
+  var html = '';
+  survey.questions.forEach(function (q, i) {
+    var sel = q.qid === selectedQid ? ' sel' : '';
+    var badges = '';
+    if (q.required) badges += '<span class="badge req">必答</span>';
+    if (q.random) badges += '<span class="badge rand">选项随机</span>';
+    var jumpCnt = q.options.filter(function (o) { return o.jump && o.jump !== 'next'; }).length;
+    if (jumpCnt) badges += '<span class="badge jump">跳转×' + jumpCnt + '</span>';
+    html += '<div class="qcard' + sel + '" onclick="selectQ(\'' + q.qid + '\')">' +
+      '<div class="qops">' +
+      '<button class="btn mini" title="上移" onclick="event.stopPropagation();moveQ(\'' + q.qid + '\',-1)">↑</button>' +
+      '<button class="btn mini" title="下移" onclick="event.stopPropagation();moveQ(\'' + q.qid + '\',1)">↓</button>' +
+      '<button class="btn mini" title="复制" onclick="event.stopPropagation();copyQ(\'' + q.qid + '\')">复制</button>' +
+      '<button class="btn mini danger" title="删除" onclick="event.stopPropagation();delQ(\'' + q.qid + '\')">删除</button>' +
+      '</div>' +
+      '<div class="qhead"><span class="qno">Q' + (i + 1) + '</span>' +
+      '<span class="qtype-tag">' + QTYPES[q.type].name + '</span>' + badges + '</div>' +
+      '<div class="qtitle-text">' + (q.required ? '<span style="color:#c0392b">*</span> ' : '') + (esc(q.title) || '<i style="color:#98a4b3">（题干未填写）</i>') + '</div>';
+    if (q.type === 'single' || q.type === 'multi') {
+      q.options.forEach(function (o, oi) {
+        html += '<div class="opt-line">' + (q.type === 'single' ? '○' : '□') + ' ' + esc(o.text) +
+          '<span class="jumparr">' + esc(jumpLabel(o.jump)) + '</span></div>';
+      });
+    } else if (q.type === 'sort') {
+      q.options.forEach(function (o, oi) { html += '<div class="opt-line">' + (oi + 1) + '. ' + esc(o.text) + '</div>'; });
+    } else if (q.type === 'scale') {
+      var cells = '';
+      for (var s = 0; s <= (q.scaleMax || 10); s++) cells += '<span style="margin-right:10px">' + s + '</span>';
+      html += '<div class="opt-line">' + cells + '</div>';
+    } else if (q.type === 'matrix') {
+      html += '<table class="pv-table"><tr><th></th>';
+      (q.cols || []).forEach(function (cl) { html += '<th>' + esc(cl) + '</th>'; });
+      html += '</tr>';
+      (q.rows || []).forEach(function (r) {
+        html += '<tr><td style="text-align:left">' + esc(r) + '</td>';
+        (q.cols || []).forEach(function () { html += '<td>○</td>'; });
+        html += '</tr>';
+      });
+      html += '</table>';
+    } else if (q.type === 'number') {
+      html += '<div class="opt-line">____（' + esc(q.min) + ' ~ ' + esc(q.max) + (q.unit ? ' ' + esc(q.unit) : '') + '）</div>';
+    } else if (q.type === 'text') {
+      html += '<div class="opt-line">____________________（开放填写' + esc(q.maxLen || 200) + '字内）</div>';
+    } else if (q.type === 'date') {
+      html += '<div class="opt-line">____-__-__（' + esc(q.unit || 'yyyy-mm-dd') + '）</div>';
+    } else if (q.type === 'info') {
+      html += '<div class="opt-line" style="color:#6c3fc5">' + esc(q.note || '（访问员宣读/展示内容，不作答）') + '</div>';
+    }
+    html += '</div>';
+  });
+  c.innerHTML = html;
+}
+
+/* ── 右栏属性 ─────────────────────────── */
+function jumpSelectHtml(q, o) {
+  var html = '<select onchange="patchOption(\'' + q.qid + '\',\'' + o.oid + '\',{jump:this.value})" title="选中该选项后的跳转">';
+  html += '<option value="next"' + (o.jump === 'next' ? ' selected' : '') + '>下一题</option>';
+  html += '<option value="end"' + (o.jump === 'end' ? ' selected' : '') + '>结束访问</option>';
+  survey.questions.forEach(function (t, ti) {
+    if (t.qid === q.qid) return;
+    html += '<option value="' + t.qid + '"' + (o.jump === t.qid ? ' selected' : '') + '>跳到 Q' + (ti + 1) + '</option>';
+  });
+  html += '</select>';
+  return html;
+}
+function renderProps() {
+  var box = $('props');
+  var q = selectedQid ? qById(selectedQid) : null;
+  if (!q) {
+    box.innerHTML = '<h3>题目属性</h3><div class="hint">在画布中点击选中一道题目，<br>即可在此编辑：<br><br>' +
+      '· 题干（支持整体/单题字体设置）<br>· 必答 · 选项随机/轮换/倒序<br>· 逐选项跳转逻辑（单选/多选）<br>' +
+      '· 数字题范围校验 · 矩阵行列定义<br>· 逻辑关系可校验、可自动调试<br><br>' +
+      '本原型为南康 ITACATI 问卷设计器的交互蓝本，完整规格见《功能细化与全链路分析》第 2 章。</div>';
+    return;
+  }
+  var i = qIndex(q.qid);
+  var html = '<h3>题目属性 · Q' + (i + 1) + ' ' + QTYPES[q.type].name + '</h3>';
+  html += '<div class="frow"><label>题干</label><textarea oninput="patchQ(\'' + q.qid + '\',{title:this.value})">' + esc(q.title) + '</textarea></div>';
+  if (q.type !== 'info') {
+    html += '<div class="frow checks"><label><input type="checkbox" ' + (q.required ? 'checked' : '') +
+      ' onchange="patchQ(\'' + q.qid + '\',{required:this.checked})">必答</label>';
+    if (q.type === 'single' || q.type === 'multi') {
+      html += '<label><input type="checkbox" ' + (q.random ? 'checked' : '') +
+        ' onchange="patchQ(\'' + q.qid + '\',{random:this.checked})">选项随机/轮换</label>';
+    }
+    html += '</div>';
+  }
+  if (q.type === 'single' || q.type === 'multi') {
+    html += '<div class="subttl">选项与跳转逻辑</div>';
+    q.options.forEach(function (o, oi) {
+      html += '<div class="opt-edit">' +
+        '<div class="line1"><input class="opttext" value="' + esc(o.text) +
+        '" oninput="patchOption(\'' + q.qid + '\',\'' + o.oid + '\',{text:this.value})">' +
+        '<button class="btn mini danger" onclick="delOption(\'' + q.qid + '\',\'' + o.oid + '\')">×</button></div>' +
+        '<div class="line2"><span class="hint">选中后</span>' + jumpSelectHtml(q, o) + '</div></div>';
+    });
+    html += '<button class="btn" onclick="addOption(\'' + q.qid + '\')">＋ 添加选项</button>' +
+      '<div class="hint" style="margin-top:8px">· 支持选项关联、互斥、排斥（高级逻辑见 qnr_logic 表）<br>· 选项可分类展示</div>';
+  }
+  if (q.type === 'sort') {
+    html += '<div class="subttl">待排序选项</div>';
+    q.options.forEach(function (o) {
+      html += '<div class="opt-edit"><div class="line1"><input class="opttext" value="' + esc(o.text) +
+        '" oninput="patchOption(\'' + q.qid + '\',\'' + o.oid + '\',{text:this.value})">' +
+        '<button class="btn mini danger" onclick="delOption(\'' + q.qid + '\',\'' + o.oid + '\')">×</button></div></div>';
+    });
+    html += '<button class="btn" onclick="addOption(\'' + q.qid + '\')">＋ 添加选项</button>';
+  }
+  if (q.type === 'matrix') {
+    html += '<div class="frow"><label>行定义（每行一项）</label><textarea oninput="patchQ(\'' + q.qid + '\',{rows:listText(this.value)})">' + esc((q.rows || []).join('\n')) + '</textarea></div>';
+    html += '<div class="frow"><label>列定义（每列一项）</label><textarea oninput="patchQ(\'' + q.qid + '\',{cols:listText(this.value)})">' + esc((q.cols || []).join('\n')) + '</textarea></div>';
+  }
+  if (q.type === 'number') {
+    html += '<div class="frow"><label>数值范围（最小值 ~ 最大值）</label><div style="display:flex;gap:6px">' +
+      '<input type="number" value="' + esc(q.min) + '" onchange="patchQ(\'' + q.qid + '\',{min:Number(this.value)})">' +
+      '<input type="number" value="' + esc(q.max) + '" onchange="patchQ(\'' + q.qid + '\',{max:Number(this.value)})"></div></div>';
+  }
+  if (q.type === 'text') {
+    html += '<div class="frow"><label>最大字数</label><input type="number" value="' + esc(q.maxLen || 200) + '" onchange="patchQ(\'' + q.qid + '\',{maxLen:Number(this.value)})"></div>';
+  }
+  if (q.type === 'scale') {
+    html += '<div class="frow"><label>刻度最大值（0 ~ N）</label><input type="number" min="1" max="20" value="' + esc(q.scaleMax || 10) + '" onchange="patchQ(\'' + q.qid + '\',{scaleMax:Number(this.value)})"></div>';
+  }
+  if (q.type === 'info') {
+    html += '<div class="frow"><label>宣读/展示内容</label><textarea oninput="patchQ(\'' + q.qid + '\',{note:this.value})">' + esc(q.note) + '</textarea></div>';
+  }
+  html += '<div class="frow"><label>访问员备注（不展示给被访者）</label><textarea oninput="patchQ(\'' + q.qid + '\',{note2:this.value})">' + esc(q.note2 || '') + '</textarea></div>';
+  box.innerHTML = html;
+}
+
+/* ── 状态栏 / 保存 / 发布 ─────────────────────────── */
+function estMinutes() {
+  var n = survey.questions.length;
+  return Math.max(1, Math.round(n * 0.4 * 10) / 10);
+}
+function renderStatus() {
+  $('statusbar').innerHTML = '<span>共 ' + survey.questions.length + ' 题</span>' +
+    '<span>预计访问时长 ≈ ' + estMinutes() + ' 分钟</span>' +
+    '<span>状态：' + esc(survey.status) + ' · ' + esc(survey.version) + '</span>' +
+    '<span id="saveState">' + esc(savedText) + '</span>' +
+    '<span style="margin-left:auto">ITACATI 问卷设计器 · 交互原型（2026）</span>';
+}
+function dirty() { savedText = '未保存更改'; renderStatus(); }
+function saveSurvey() {
+  survey.title = $('svyTitle').value;
+  savedText = '已保存 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  renderStatus();
+}
+function publish() {
+  var issues = validate();
+  var errs = issues.filter(function (x) { return x.level === 'err'; });
+  if (errs.length) { openValidate(); return; }
+  if (!confirm('校验通过，确认发布问卷？\n发布后进入"已发布"状态，可在执行中途小幅调整（ITACATI 特性：访问中途可调整问卷，访员端自动更新）。')) return;
+  survey.status = '已发布';
+  survey.version = 'v' + (parseFloat(survey.version.slice(1)) + 0.1).toFixed(1);
+  $('svyMeta').textContent = '版本 ' + survey.version + ' · 状态：' + survey.status;
+  saveSurvey(); renderStatus();
+}
+
+/* ── 逻辑校验 ─────────────────────────── */
+function validate() {
+  var issues = [];
+  var qs = survey.questions;
+  if (!qs.length) issues.push({ level: 'err', msg: '问卷为空：请至少添加 1 道题目。' });
+  qs.forEach(function (q, i) {
+    var no = 'Q' + (i + 1);
+    if (!q.title || !q.title.trim()) issues.push({ level: 'err', msg: no + ' 题干为空。' });
+    if (q.type === 'single' || q.type === 'multi' || q.type === 'sort') {
+      if (q.options.length < 2) issues.push({ level: 'err', msg: no + ' 选项不足 2 个。' });
+      q.options.forEach(function (o) {
+        if (!o.text.trim()) issues.push({ level: 'warn', msg: no + ' 存在空选项。' });
+      });
+    }
+    if (q.type === 'single' || q.type === 'multi') {
+      q.options.forEach(function (o) {
+        if (o.jump !== 'next' && o.jump !== 'end' && !qById(o.jump)) {
+          issues.push({ level: 'err', msg: no + ' 存在失效跳转目标（已被删除），请改为"下一题"。' });
+        }
+      });
+    }
+    if (q.type === 'matrix') {
+      if (!q.rows.length || !q.cols.length) issues.push({ level: 'err', msg: no + ' 矩阵题行列定义不能为空。' });
+    }
+    if (q.type === 'number' && Number(q.min) > Number(q.max)) {
+      issues.push({ level: 'err', msg: no + ' 数字题最小值大于最大值。' });
+    }
+  });
+  /* 可达性分析：BFS。默认顺序流：无跳转或存在 next/非选项题 → 指向下一题 */
+  var adj = qs.map(function (q, i) {
+    var set = [];
+    if (q.type === 'single' || q.type === 'multi') {
+      q.options.forEach(function (o) {
+        if (o.jump === 'end') return;
+        if (o.jump === 'next' || !o.jump) { if (i + 1 < qs.length) set.push(i + 1); }
+        else { var t = qIndex(o.jump); if (t >= 0) set.push(t); }
+      });
+      if (!q.options.length && i + 1 < qs.length) set.push(i + 1);
+    } else if (i + 1 < qs.length) set.push(i + 1);
+    return Array.from(new Set(set));
+  });
+  var seen = qs.map(function (_, i) { return i === 0; });
+  var queue = [0];
+  while (queue.length) {
+    var cur = queue.shift();
+    (adj[cur] || []).forEach(function (t) { if (!seen[t]) { seen[t] = true; queue.push(t); } });
+  }
+  qs.forEach(function (q, i) {
+    if (!seen[i] && i !== 0) issues.push({ level: 'warn', msg: 'Q' + (i + 1) + ' 无法被访问到（跳转逻辑不可达），将成为死题。' });
+  });
+  if (!issues.length) issues.push({ level: 'ok', msg: '校验通过：题干、选项、跳转、可达性、数值范围均正常。' });
+  return issues;
+}
+function openValidate() {
+  var issues = validate();
+  var html = issues.map(function (x) {
+    return '<div class="issue ' + x.level + '">' + (x.level === 'err' ? '【错误】' : x.level === 'warn' ? '【警告】' : '【通过】') + esc(x.msg) + '</div>';
+  }).join('');
+  showModal('逻辑校验报告', html,
+    '<button class="btn" onclick="closeModal()">关闭</button>' +
+    '<button class="btn primary" onclick="closeModal();openPreview()">继续预览</button>', 'wide');
+}
+
+/* ── 配额设置（简化演示） ─────────────────────────── */
+function openQuota() {
+  var singles = survey.questions.filter(function (q) { return q.type === 'single'; });
+  var html = '';
+  if (!singles.length) {
+    html = '<div class="hint">当前问卷没有单选题，配额需基于单选题设置。<br>配额支持：单重配额、交叉配额（多维条件组合），实时统计、实时修改，配额条件可随项目导出。</div>';
+  } else {
+    html = '<div class="hint" style="margin-bottom:10px">以下为"交叉配额"演示：按单选题选项设置目标完成量，执行期系统自动控制样本投放并实时更新完成数。</div>';
+    html += '<table class="pv-table"><tr><th>题目</th><th>选项</th><th>目标量</th><th>已完成</th><th>完成率</th></tr>';
+    singles.forEach(function (q) {
+      var qi = qIndex(q.qid);
+      q.options.forEach(function (o) {
+        html += '<tr><td style="text-align:left">Q' + (qi + 1) + ' ' + esc(q.title.slice(0, 12)) + '</td><td style="text-align:left">' + esc(o.text) + '</td>' +
+          '<td><input type="number" value="100" style="width:70px" onchange="this.parentNode.parentNode.cells[4].firstChild.value=\'0%\'"></td>' +
+          '<td>0</td><td><input value="0%" style="width:60px;border:none;background:transparent" readonly></td></tr>';
+      });
+    });
+    html += '</table>';
+  }
+  showModal('配额设置（单重 / 交叉配额）', html, '<button class="btn primary" onclick="closeModal()">确定</button>', 'wide');
+}
+
+/* ── 预览（模拟坐席端作答） ─────────────────────────── */
+var pv = null;
+function openPreview() {
+  if (!survey.questions.length) { alert('请先添加题目'); return; }
+  pv = { idx: 0, answers: {} };
+  renderPreview();
+}
+function renderPreview() {
+  var qs = survey.questions;
+  var q = qs[pv.idx];
+  var i = pv.idx;
+  var body = '';
+  if (!q) {
+    body = '<div class="pv-end"><div class="big">✅</div><h2 style="margin:8px 0">访问结束</h2>' +
+      '<div class="hint">共作答 ' + Object.keys(pv.answers).length + ' 题 · 答卷已提交<br>（坐席端此时将提交结果码并进入后处理态）</div></div>';
+    showModal('问卷预览 · ' + esc(survey.title), body,
+      '<button class="btn" onclick="closeModal()">关闭</button>' +
+      '<button class="btn primary" onclick="closeModal();openPreview()">重新预览</button>');
+    return;
+  }
+  body = '<div class="pv-wrap">' +
+    '<div class="pv-prog"><i style="width:' + Math.round(i / qs.length * 100) + '%"></i></div>' +
+    '<div class="pv-qno">第 ' + (i + 1) + ' / ' + qs.length + ' 题 · ' + QTYPES[q.type].name + (q.required ? ' · 必答' : '') + '</div>' +
+    '<div class="pv-title">' + esc(q.title) + '</div>' +
+    '<div class="pv-opts" id="pvBody">' + pvBodyHtml(q) + '</div>' +
+    '<div class="pv-note" id="pvErr"></div></div>';
+  showModal('问卷预览（模拟坐席端 · 所见即所得）', body,
+    '<button class="btn" onclick="pvGoto(' + (i - 1) + ')">← 上一题</button>' +
+    '<button class="btn primary" onclick="pvNext()">下一题 →</button>');
+}
+function pvBodyHtml(q) {
+  var html = '';
+  if (q.type === 'single') {
+    q.options.forEach(function (o, oi) {
+      html += '<label><input type="radio" name="pvq" value="' + oi + '"> ' + esc(o.text) + '</label>';
+    });
+  } else if (q.type === 'multi') {
+    q.options.forEach(function (o, oi) {
+      html += '<label><input type="checkbox" class="pvm" value="' + oi + '"> ' + esc(o.text) + '</label>';
+    });
+  } else if (q.type === 'scale') {
+    for (var s = 0; s <= (q.scaleMax || 10); s++) {
+      html += '<label style="display:inline-flex;min-width:52px;justify-content:center"><input type="radio" name="pvq" value="' + s + '"> ' + s + '</label>';
+    }
+  } else if (q.type === 'sort') {
+    q.options.forEach(function (o, oi) {
+      html += '<label>' + esc(o.text) + ' <select class="pvs" style="margin-left:auto;width:80px">' +
+        q.options.map(function (_, r) { return '<option value="' + (r + 1) + '">第' + (r + 1) + '</option>'; }).join('') +
+        '</select></label>';
+    });
+  } else if (q.type === 'matrix') {
+    html += '<table class="pv-table"><tr><th></th>';
+    q.cols.forEach(function (c, ci) { html += '<th>' + esc(c) + '</th>'; });
+    html += '</tr>';
+    q.rows.forEach(function (r, ri) {
+      html += '<tr><td style="text-align:left">' + esc(r) + '</td>';
+      q.cols.forEach(function (_, ci) {
+        html += '<td><input type="radio" name="pvm' + ri + '" value="' + ci + '"></td>';
+      });
+      html += '</tr>';
+    });
+    html += '</table>';
+  } else if (q.type === 'number') {
+    html += '<input type="number" id="pvNum" min="' + esc(q.min) + '" max="' + esc(q.max) + '" style="padding:8px;width:180px">（' + esc(q.min) + ' ~ ' + esc(q.max) + '）';
+  } else if (q.type === 'text') {
+    html += '<textarea id="pvText" style="width:100%;min-height:70px;padding:8px" maxlength="' + esc(q.maxLen || 200) + '"></textarea>';
+  } else if (q.type === 'date') {
+    html += '<input type="date" id="pvDate" style="padding:8px">';
+  } else if (q.type === 'info') {
+    html += '<div style="background:#f6f0ff;border:1px solid #e2d6f7;border-radius:4px;padding:12px;line-height:1.8">' +
+      esc(q.note || q.title) + '</div>';
+  }
+  return html;
+}
+function pvGoto(i) { if (i >= 0 && i < survey.questions.length) { pv.idx = i; renderPreview(); } }
+function pvNext() {
+  var qs = survey.questions;
+  var q = qs[pv.idx];
+  var err = function (m) { $('pvErr').textContent = m; };
+  var store = function (v) { pv.answers[q.qid] = v; };
+  var jumpOf = 'next';
+  if (q.type === 'single' || q.type === 'scale') {
+    var r = document.querySelector('input[name=pvq]:checked');
+    if (!r) { if (q.required) return err('本题必答，请选择后再继续。'); }
+    else {
+      store(r.value);
+      if (q.type === 'single') {
+        var o = q.options[Number(r.value)];
+        if (o && o.jump) jumpOf = o.jump;
+      }
+    }
+  } else if (q.type === 'multi') {
+    var checked = Array.prototype.slice.call(document.querySelectorAll('.pvm:checked'));
+    if (!checked.length) { if (q.required) return err('本题必答，请选择后再继续。'); }
+    else {
+      store(checked.map(function (c) { return c.value; }));
+      for (var ci = checked.length - 1; ci >= 0; ci--) {
+        var oo = q.options[Number(checked[ci].value)];
+        if (oo && oo.jump && oo.jump !== 'next') { jumpOf = oo.jump; break; }
+      }
+    }
+  } else if (q.type === 'sort') {
+    var vals = Array.prototype.slice.call(document.querySelectorAll('.pvs')).map(function (s) { return s.value; });
+    store(vals.join(',')); 
+  } else if (q.type === 'matrix') {
+    var rowsAns = [], allOk = true;
+    q.rows.forEach(function (_, ri) {
+      var rr = document.querySelector('input[name=pvm' + ri + ']:checked');
+      if (rr) rowsAns.push(rr.value); else allOk = false;
+    });
+    if (!allOk && q.required && q.rows.length) return err('矩阵题每行必答。');
+    store(rowsAns.join(','));
+  } else if (q.type === 'number') {
+    var nv = $('pvNum').value;
+    if (nv === '') { if (q.required) return err('本题必答，请填写数值。'); }
+    else {
+      var n = Number(nv);
+      if (isNaN(n) || n < Number(q.min) || n > Number(q.max)) return err('数值超出范围（' + q.min + ' ~ ' + q.max + '），已被校验拦截——即 CATI"电脑自动校验答案"特性。');
+      store(nv);
+    }
+  } else if (q.type === 'text') {
+    var tv = $('pvText').value;
+    if (!tv.trim() && q.required) return err('本题必答，请填写内容。');
+    store(tv);
+  } else if (q.type === 'date') {
+    var dv = $('pvDate').value;
+    if (!dv && q.required) return err('本题必答，请选择日期。');
+    store(dv);
+  } else if (q.type === 'info') {
+    /* 说明题：直接下一题 */
+  }
+  /* 执行跳转 */
+  var nextIdx;
+  if (jumpOf === 'end') nextIdx = qs.length; 
+  else if (jumpOf === 'next') nextIdx = pv.idx + 1;
+  else nextIdx = qIndex(jumpOf);
+  pv.idx = (nextIdx >= 0) ? nextIdx : qs.length;
+  renderPreview();
+}
+
+/* ── 导入 / 导出 / 打印 ─────────────────────────── */
+function exportJson() {
+  survey.title = $('svyTitle').value;
+  var blob = new Blob([JSON.stringify(survey, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = survey.title + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function importJson(e) {
+  var f = e.target.files[0]; if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () {
+    try {
+      var obj = JSON.parse(rd.result);
+      if (!obj.questions) throw new Error('格式不正确');
+      survey = obj;
+      $('svyTitle').value = survey.title || '未命名问卷';
+      $('svyMeta').textContent = '版本 ' + (survey.version || 'v1.0') + ' · 状态：' + (survey.status || '草稿');
+      selectedQid = null;
+      render(); saveSurvey();
+    } catch (err) { alert('导入失败：' + err.message); }
+  };
+  rd.readAsText(f);
+  e.target.value = '';
+}
+
+/* ── 通用弹窗 ─────────────────────────── */
+function showModal(title, bodyHtml, footHtml, extraCls) {
+  $('modalRoot').innerHTML = '<div class="mask" onclick="if(event.target===this)closeModal()">' +
+    '<div class="modal ' + (extraCls || '') + '"><div class="mhead"><b>' + title + '</b>' +
+    '<span class="x" onclick="closeModal()">×</span></div>' +
+    '<div class="mbody">' + bodyHtml + '</div>' +
+    '<div class="mfoot">' + (footHtml || '<button class="btn" onclick="closeModal()">关闭</button>') + '</div></div></div>';
+}
+function closeModal() { $('modalRoot').innerHTML = ''; }
+
+/* ── 初始演示数据 ─────────────────────────── */
+(function seed() {
+  var q1 = newQuestion('single');
+  q1.title = '【甄别】请问您或您的家人是否在市场研究行业工作？';
+  q1.options = [
+    { oid: uid('o'), text: '否（继续访问）', jump: 'next' },
+    { oid: uid('o'), text: '是（终止访问）', jump: 'end' }
+  ];
+  var q2 = newQuestion('single');
+  q2.title = '您的性别是？';
+  q2.options = [
+    { oid: uid('o'), text: '男', jump: 'next' },
+    { oid: uid('o'), text: '女', jump: 'next' }
+  ];
+  var q3 = newQuestion('scale');
+  q3.title = '总体而言，您对本服务的满意程度打几分？（0-10）';
+  var q4 = newQuestion('multi');
+  q4.title = '您使用过以下哪些服务渠道？（可多选）';
+  q4.options = [
+    { oid: uid('o'), text: '服务热线', jump: 'next' },
+    { oid: uid('o'), text: '营业厅', jump: 'next' },
+    { oid: uid('o'), text: '微信公众号', jump: 'next' },
+    { oid: uid('o'), text: 'APP', jump: 'next' }
+  ];
+  var q5 = newQuestion('single');
+  q5.title = '您是否愿意接受回访，进一步了解您的建议？';
+  q5.options = [
+    { oid: uid('o'), text: '愿意（转预约登记）', jump: 'next' },
+    { oid: uid('o'), text: '不愿意', jump: 'end' }
+  ];
+  var q6 = newQuestion('text');
+  q6.title = '您还有哪些意见或建议？';
+  q6.required = false;
+  survey.questions = [q1, q2, q3, q4, q5, q6];
+})();
+
+/* ── 首次渲染 ─────────────────────────── */
+renderLeft();
+renderCanvas();
+renderProps();
+renderStatus();
+</script>
+</body>
+</html>

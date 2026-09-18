@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IVR 流程设计器 · 交互原型 · NK3C 风格</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 1080px; }
+
+  .topbar { background: #14532d; color: #fff; padding: 0 14px; flex: 0 0 auto; }
+  .topbar .row1 { display: flex; align-items: center; gap: 14px; padding: 8px 0; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .fname input { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); color: #fff; padding: 4px 8px; border-radius: 3px; width: 220px; }
+  .fname input::placeholder { color: rgba(255,255,255,.5); }
+  .meta { font-size: 12px; opacity: .85; }
+  .spacer { flex: 1; }
+  .btn { display: inline-block; border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 3px; padding: 4px 12px; cursor: pointer; font-size: 12px; }
+  .btn:hover { border-color: #1f6fb2; color: #1f6fb2; }
+  .btn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .btn.green { background: #1e7e34; border-color: #1e7e34; color: #fff; }
+  .btn.mini { padding: 1px 7px; font-size: 12px; }
+  .topbar .btn { background: transparent; border-color: rgba(255,255,255,.4); color: #fff; }
+  .topbar .btn:hover { background: rgba(255,255,255,.12); }
+  .topbar .btn.sim { background: #6c3fc5; border-color: #6c3fc5; }
+  .topbar .row2 { display: flex; gap: 6px; padding-bottom: 8px; flex-wrap: wrap; }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+  .left { flex: 0 0 200px; background: #fff; border-right: 1px solid #dfe4ea; overflow-y: auto; padding: 10px; }
+  .nt { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e3e8ee; border-radius: 4px; margin-bottom: 7px; cursor: pointer; background: #fbfcfe; }
+  .nt:hover { border-color: #1e7e34; background: #eef8f0; }
+  .nt .ico { width: 24px; height: 24px; border-radius: 4px; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 12px; flex: 0 0 auto; }
+  .nt b { font-size: 12.5px; display: block; }
+  .nt span { font-size: 11px; color: #8a97a5; }
+  .hint { color: #98a4b3; font-size: 12px; line-height: 1.7; }
+
+  .canvas-wrap { flex: 1; overflow-y: auto; background: #f0f4ef; padding: 16px 20px 60px; }
+  .nrow { margin-left: var(--indent, 0px); position: relative; margin-bottom: 8px; }
+  .edge { font-size: 11.5px; color: #1e7e34; background: #e4f3e8; border: 1px solid #bfe0c8; padding: 0 8px; border-radius: 9px; display: inline-block; margin-bottom: 3px; }
+  .ncard { background: #fff; border: 1px solid #dfe4ea; border-left: 4px solid #9fb8a8; border-radius: 4px; padding: 9px 12px; cursor: pointer; }
+  .ncard:hover { border-color: #1e7e34; }
+  .ncard.sel { border-color: #1e7e34; border-left-color: #1e7e34; box-shadow: 0 1px 6px rgba(30,126,52,.25); }
+  .ncard .nh { display: flex; align-items: center; gap: 8px; }
+  .ncard .nid { color: #98a4b3; font-size: 11px; font-family: Consolas, monospace; }
+  .ncard .nname { font-weight: bold; }
+  .badge { font-size: 11px; border-radius: 3px; padding: 1px 6px; background: #eef3f9; color: #4a6a94; }
+  .badge.warn { background: #fdeaea; color: #c0392b; }
+  .nbody { color: #556; font-size: 12px; margin-top: 4px; line-height: 1.6; }
+  .nbody .to { color: #1e7e34; }
+  .nops { position: absolute; right: 8px; top: 8px; display: none; gap: 4px; }
+  .nrow:hover .nops, .ncard.sel ~ .nops { display: flex; }
+  .nrow:hover .nops { display: flex; }
+  .root-tag { background: #14532d; color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 3px; }
+
+  .right { flex: 0 0 320px; background: #fff; border-left: 1px solid #dfe4ea; overflow-y: auto; padding: 12px; }
+  .props h3 { font-size: 13px; color: #14532d; border-bottom: 1px solid #eef1f5; padding-bottom: 6px; margin-bottom: 10px; }
+  .frow { margin-bottom: 10px; }
+  .frow label { display: block; color: #667; margin-bottom: 4px; font-size: 12px; }
+  .frow input[type=text], .frow select, .frow textarea { width: 100%; border: 1px solid #d0d7de; border-radius: 3px; padding: 5px 8px; font-size: 13px; font-family: inherit; }
+  .frow textarea { resize: vertical; min-height: 54px; }
+  .keyrow { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+  .keyrow input, .keyrow select { border: 1px solid #d0d7de; border-radius: 3px; padding: 4px 6px; font-size: 12px; }
+  .keyrow .k { width: 46px; text-align: center; font-family: Consolas, monospace; font-weight: bold; color: #14532d; }
+  .keyrow select { flex: 1; }
+  .subttl { font-size: 12px; color: #1e7e34; font-weight: bold; margin: 12px 0 6px; }
+
+  .statusbar { flex: 0 0 28px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center; gap: 20px; padding: 0 14px; color: #667; font-size: 12px; }
+
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.45); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 460px; max-width: 92vw; max-height: 86vh; overflow-y: auto; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .modal .mhead { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid #eef1f5; }
+  .modal .mhead b { font-size: 14px; color: #14532d; }
+  .modal .mhead .x { margin-left: auto; cursor: pointer; color: #98a4b3; font-size: 18px; }
+  .modal .mbody { padding: 14px 16px; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
+  .issue { padding: 7px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 12px; }
+  .issue.err { background: #fdeaea; color: #a93226; }
+  .issue.warn { background: #fdf6e3; color: #9a7d0a; }
+  .issue.ok { background: #eaf7ed; color: #27863c; }
+
+  /* 来电模拟器 */
+  .sim-phone { background: #14324f; border-radius: 10px; color: #fff; padding: 14px; }
+  .sim-lcd { background: #eef4f8; color: #333; border-radius: 6px; min-height: 120px; padding: 12px; font-size: 13px; line-height: 1.8; }
+  .sim-keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .sim-keys button { padding: 9px 0; font-size: 15px; border-radius: 6px; border: 1px solid rgba(255,255,255,.3); background: rgba(255,255,255,.08); color: #fff; cursor: pointer; }
+  .sim-keys button:hover { background: rgba(255,255,255,.2); }
+  .sim-trace { font-family: Consolas, monospace; font-size: 11px; color: #9fd0a5; max-height: 110px; overflow-y: auto; margin-top: 10px; line-height: 1.7; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="row1">
+      <div class="logo">IVR 流程设计器 <small>NK3C · 任意级数/回合跳转</small></div>
+      <div class="fname"><input id="flowName" value="不动产登记热线_962269"></div>
+      <div class="meta" id="flowMeta">绑定号码 962269 · v1.2 · 已发布</div>
+      <div class="spacer"></div>
+      <button class="btn" onclick="saveFlow()">保存</button>
+    </div>
+    <div class="row2">
+      <button class="btn" onclick="openValidate()">✓ 逻辑校验</button>
+      <button class="btn sim" onclick="openSim()">▶ 来电模拟器</button>
+      <button class="btn" onclick="exportJson()">⬇ 导出 JSON</button>
+      <button class="btn green" onclick="publish()">发 布</button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="left">
+      <div class="hint" style="margin-bottom:8px">节点库（点击追加）</div>
+      <div id="palette"></div>
+      <div class="hint" style="margin-top:10px">· 播报/查询等节点在右侧配置出口<br>· 按键菜单支持 0-9 任意级数分支<br>· 支持跨级返回与任意回合跳转</div>
+    </div>
+
+    <div class="canvas-wrap"><div id="canvas"></div></div>
+
+    <div class="right" id="props"></div>
+  </div>
+
+  <div class="statusbar">
+    <span>节点数：<b id="stNodes">0</b></span>
+    <span>状态：<b id="stStatus">已发布</b></span>
+    <span id="stSave">未保存更改</span>
+    <span style="margin-left:auto">对应《功能细化与全链路深度分析》2.14（M14 IVR 管理）与表 ivr_flow / ivr_node</span>
+  </div>
+</div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* =========================================================
+ * IVR 流程设计器交互原型
+ * 数据：flow = { name, version, status, nodes[] }
+ * 节点：{ id, type, name, prompt, keys:{'1':target,...},
+ *         next, okNext, failNext, api, skill, timeoutNext, ... }
+ * target 取值：节点id | 'AGENT'(转人工) | 'END'(结束) | 'VM'(留言)
+ * ========================================================= */
+
+var NTYPES = {
+  PLAY:      { name:'播报节点', ico:'▶', color:'#2e6da4', desc:'播放提示音/TTS' },
+  MENU:      { name:'按键菜单', ico:'#', color:'#1e7e34', desc:'0-9 按键分支' },
+  QUERY:     { name:'查询接口', ico:'⟳', color:'#6c3fc5', desc:'对接业务系统查询' },
+  TRANSFER:  { name:'转人工',   ico:'☎', color:'#c0392b', desc:'转技能组排队' },
+  RECORD:    { name:'语音留言', ico:'🎙', color:'#b9770e', desc:'录音留言可转工单' },
+  TIMECHECK: { name:'时段检查', ico:'🕐', color:'#5d6d7e', desc:'服务时间内外分流' },
+  COND:      { name:'条件分支', ico:'∧', color:'#7d8ca0', desc:'按变量条件路由' }
+};
+var SKILLS = ['综合咨询组', '登记业务组', '投诉处理组', '粤语服务组'];
+
+var flow = {
+  name: '不动产登记热线_962269',
+  version: 'v1.2',
+  status: '已发布',
+  nodes: [
+    { id:'n1', type:'PLAY', name:'欢迎语', prompt:'欢迎致电不动产登记热线，请根据语音提示选择服务。', next:'n2' },
+    { id:'n2', type:'MENU', name:'业务导航主菜单',
+      prompt:'业务咨询请按1，办证结果查询请按2，投诉建议请按3，人工服务请按0。',
+      keys: { '1':'n3', '2':'n4', '3':'n5', '0':'n3' } },
+    { id:'n3', type:'TRANSFER', name:'转人工·综合咨询', skill:'综合咨询组', timeoutNext:'n5' },
+    { id:'n4', type:'QUERY', name:'办证结果查询', api:'/api/cert/query', prompt:'请输入受理号，以#号结束。', okNext:'n6', failNext:'n3' },
+    { id:'n6', type:'PLAY', name:'播报查询结果', prompt:'您的业务已进入审核环节，预计3个工作日内办结。返回主菜单请继续收听。', next:'n2' },
+    { id:'n5', type:'RECORD', name:'投诉建议留言', prompt:'请在提示音后留言，我们将尽快与您联系。', toWorkorder:true }
+  ]
+};
+var selectedId = 'n1';
+var savedText = '未保存更改';
+
+function $id(x){ return document.getElementById(x); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function nById(id){ for (var i=0;i<flow.nodes.length;i++) if (flow.nodes[i].id===id) return flow.nodes[i]; return null; }
+function nodeTargets(n) {
+  var t = [];
+  if (!n) return t;
+  if (n.type==='PLAY')  { if (n.next) t.push(n.next); }
+  if (n.type==='MENU')  { Object.keys(n.keys||{}).forEach(function(k){ t.push(n.keys[k]); }); }
+  if (n.type==='QUERY') { if (n.okNext) t.push(n.okNext); if (n.failNext) t.push(n.failNext); }
+  if (n.type==='TRANSFER'){ if (n.timeoutNext) t.push(n.timeoutNext); }
+  return t;
+}
+
+/* ── 节点库 ── */
+function renderPalette() {
+  var html = '';
+  Object.keys(NTYPES).forEach(function(k){
+    var t = NTYPES[k];
+    html += '<div class="nt" onclick="addNode(\''+k+'\')"><div class="ico" style="background:'+t.color+'">'+t.ico+'</div>'+
+            '<div><b>'+t.name+'</b><span>'+t.desc+'</span></div></div>';
+  });
+  $id('palette').innerHTML = html;
+}
+function addNode(type) {
+  var seq = flow.nodes.length + 1;
+  var n = { id: 'n' + Date.now().toString(36).slice(-4) + seq, type: type, name: NTYPES[type].name + '_' + seq };
+  if (type==='PLAY') n.prompt=''; 
+  if (type==='MENU') n.keys={};
+  if (type==='TRANSFER') n.skill = SKILLS[0];
+  if (type==='QUERY') { n.api='/api/…'; n.okNext=''; n.failNext=''; }
+  if (type==='RECORD') n.toWorkorder = true;
+  if (type==='TIMECHECK') { n.inNext=''; n.outNext=''; }
+  if (type==='COND') { n.expr=''; n.trueNext=''; n.falseNext=''; }
+  flow.nodes.push(n);
+  selectedId = n.id;
+  dirty(); renderAll();
+}
+
+/* ── 画布：从根节点按树状渲染 ── */
+function renderCanvas() {
+  var root = flow.nodes[0];
+  var seen = {};
+  var html = '';
+  if (!root) { $id('canvas').innerHTML = '<div class="hint" style="padding:40px;text-align:center">流程为空，请从左侧添加节点（第一个节点为入口）</div>'; return; }
+  function walk(n, indent, edgeLabel) {
+    if (!n) return;
+    if (seen[n.id]) {
+      html += '<div class="nrow" style="--indent:'+indent+'px"><span class="edge">'+esc(edgeLabel)+'</span> '+
+              '<span class="hint">↩ 跳回已展示节点 '+n.id+'（'+esc(n.name)+'）</span></div>';
+      return;
+    }
+    seen[n.id] = true;
+    var t = NTYPES[n.type];
+    var isRoot = n.id === flow.nodes[0].id;
+    var body = '';
+    if (n.prompt) body += esc(n.prompt.slice(0,60)) + (n.prompt.length>60?'…':'') + '<br>';
+    var tos = [];
+    if (n.type==='PLAY' && n.next) tos.push('默认 → ' + label(n.next));
+    if (n.type==='MENU') Object.keys(n.keys||{}).forEach(function(k){ tos.push('按'+k+' → '+label(n.keys[k])); });
+    if (n.type==='QUERY') { tos.push('成功 → '+label(n.okNext)); tos.push('失败 → '+label(n.failNext)); }
+    if (n.type==='TRANSFER') tos.push('排队超时 → '+label(n.timeoutNext));
+    if (n.type==='RECORD') tos.push(n.toWorkorder?'结束 → 生成工单':'结束');
+    if (n.type==='TIMECHECK') { tos.push('时段内 → '+label(n.inNext)); tos.push('时段外 → '+label(n.outNext)); }
+    if (n.type==='COND') { tos.push('真 → '+label(n.trueNext)); tos.push('假 → '+label(n.falseNext)); }
+    if (tos.length) body += tos.map(function(x){ return '<span class="to">'+esc(x)+'</span>'; }).join('　');
+    html += '<div class="nrow" style="--indent:'+indent+'px">'+
+            '<div>'+(edgeLabel?'<span class="edge">'+esc(edgeLabel)+'</span> ':'')+'</div>'+
+            '<div class="ncard'+(selectedId===n.id?' sel':'')+'" onclick="selectNode(\''+n.id+'\')">'+
+            '<div class="nh"><span class="nid">'+n.id+'</span><span class="ico" style="width:20px;height:20px;border-radius:3px;background:'+t.color+';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px">'+t.ico+'</span>'+
+            '<span class="nname">'+esc(n.name)+'</span><span class="badge">'+t.name+'</span>'+(isRoot?'<span class="root-tag">入口</span>':'')+'</div>'+
+            '<div class="nbody">'+body+'</div></div></div>';
+    nodeTargets(n).forEach(function(tid, i) {
+      var lbl = edgeLabelOf(n, tid, i);
+      walk(nById(tid), indent+26, lbl);
+    });
+  }
+  function edgeLabelOf(n, tid, i) {
+    if (n.type==='MENU') { var ks = Object.keys(n.keys||{}).filter(function(k){return n.keys[k]===tid;}); return '按'+ks.join('/'); }
+    if (n.type==='QUERY') return n.okNext===tid ? '查询成功' : '查询失败';
+    if (n.type==='TRANSFER') return '排队超时';
+    if (n.type==='TIMECHECK') return n.inNext===tid ? '时段内' : '时段外';
+    if (n.type==='COND') return n.trueNext===tid ? '条件为真' : '条件为假';
+    return '下一步';
+  }
+  function label(tid) {
+    if (tid==='AGENT') return '转人工';
+    if (tid==='VM') return '留言';
+    if (tid==='END') return '结束';
+    var t = nById(tid);
+    return tid + (t ? ' '+t.name : '（未设置）');
+  }
+  walk(root, 0, '');
+  $id('canvas').innerHTML = html;
+  $id('stNodes').textContent = flow.nodes.length;
+}
+
+/* ── 属性面板 ── */
+function nodeSelect(field, cur, opts) {
+  var html = '<select onchange="patchSel('+JSON.stringify(field).replace(/"/g,'&quot;')+',this.value)">';
+  html += '<option value="">（未设置）</option>';
+  html += '<option value="AGENT"'+(cur==='AGENT'?' selected':'')+'>转人工</option>';
+  html += '<option value="VM"'+(cur==='VM'?' selected':'')+'>留言信箱</option>';
+  html += '<option value="END"'+(cur==='END'?' selected':'')+'>结束</option>';
+  flow.nodes.forEach(function(n){ if (n.id!==selectedId) html += '<option value="'+n.id+'"'+(cur===n.id?' selected':'')+'>'+n.id+' · '+esc(n.name)+'</option>'; });
+  html += '</select>';
+  return html;
+}
+function patchField(field, value) {
+  var n = nById(selectedId); if (!n) return;
+  var keys = field.split('.');
+  var obj = n;
+  for (var i=0;i<keys.length-1;i++) obj = obj[keys[i]];
+  obj[keys[keys.length-1]] = value;
+  dirty(); renderCanvas();
+}
+function patchSel(field, value){ patchField(field, value); }
+function renderProps() {
+  var box = $id('props');
+  var n = nById(selectedId);
+  if (!n) { box.innerHTML = '<h3>节点属性</h3><div class="hint">在画布中选中节点后在此编辑</div>'; return; }
+  var t = NTYPES[n.type];
+  var html = '<h3>'+t.ico+' '+t.name+' · '+n.id+'</h3>';
+  html += '<div class="frow"><label>节点名称</label><input type="text" value="'+esc(n.name)+'" oninput="patchField(\'name\',this.value)"></div>';
+  if (n.type==='PLAY' || n.type==='MENU' || n.type==='QUERY' || n.type==='RECORD') {
+    html += '<div class="frow"><label>播报文本（可由 TTS 合成或关联语音文件）</label><textarea oninput="patchField(\'prompt\',this.value)">'+esc(n.prompt||'')+'</textarea></div>';
+  }
+  if (n.type==='PLAY') html += '<div class="subttl">出口</div><div class="frow"><label>播报完成后</label>'+nodeSelect('next', n.next)+'</div>';
+  if (n.type==='MENU') {
+    html += '<div class="subttl">按键分支（支持 0-9，任意级数）</div>';
+    var keys = n.keys || {};
+    for (var d=0; d<=9; d++) {
+      var cur = keys[String(d)];
+      if (cur === undefined && !keyUsed(String(d))) {
+        html += '<div class="keyrow"><span class="k">'+d+'</span>'+nodeSelect('keys.'+d, cur)+'</div>';
+      } else {
+        html += '<div class="keyrow"><span class="k">'+d+'</span>'+nodeSelect('keys.'+d, cur)+
+                '<button class="btn mini" onclick="patchField(\'keys.'+d+'\',undefined);this.blur()">清</button></div>';
+      }
+    }
+  }
+  if (n.type==='QUERY') {
+    html += '<div class="frow"><label>查询接口地址</label><input type="text" value="'+esc(n.api||'')+'" oninput="patchField(\'api\',this.value)"></div>'+
+            '<div class="frow"><label>查询成功 →</label>'+nodeSelect('okNext', n.okNext)+'</div>'+
+            '<div class="frow"><label>查询失败/超时 →</label>'+nodeSelect('failNext', n.failNext)+'</div>';
+  }
+  if (n.type==='TRANSFER') {
+    html += '<div class="frow"><label>转接技能组</label><select onchange="patchField(\'skill\',this.value)">'+
+            SKILLS.map(function(s){ return '<option'+(n.skill===s?' selected':'')+'>'+s+'</option>'; }).join('')+'</select></div>'+
+            '<div class="frow"><label>排队超时(30s) →</label>'+nodeSelect('timeoutNext', n.timeoutNext)+'</div>';
+  }
+  if (n.type==='RECORD') {
+    html += '<div class="frow"><label>留言结束</label><select onchange="patchField(\'toWorkorder\',this.value===\'1\')">'+
+            '<option value="1"'+(n.toWorkorder?' selected':'')+'>自动生成工单并通知督导</option>'+
+            '<option value="0"'+(!n.toWorkorder?' selected':'')+'>仅保存留言</option></select></div>';
+  }
+  if (n.type==='TIMECHECK') {
+    html += '<div class="frow"><label>服务时段内 →</label>'+nodeSelect('inNext', n.inNext)+'</div>'+
+            '<div class="frow"><label>服务时段外 →</label>'+nodeSelect('outNext', n.outNext)+'</div>';
+  }
+  if (n.type==='COND') {
+    html += '<div class="frow"><label>条件表达式</label><input type="text" value="'+esc(n.expr||'')+'" placeholder="如 caller 黑名单命中" oninput="patchField(\'expr\',this.value)"></div>'+
+            '<div class="frow"><label>为真 →</label>'+nodeSelect('trueNext', n.trueNext)+'</div>'+
+            '<div class="frow"><label>为假 →</label>'+nodeSelect('falseNext', n.falseNext)+'</div>';
+  }
+  html += '<div class="frow" style="margin-top:14px"><button class="btn" onclick="delNode(\''+n.id+'\')">删除该节点</button></div>';
+  box.innerHTML = html;
+}
+function keyUsed(k) {
+  var n = nById(selectedId);
+  return n && n.keys && n.keys[k] !== undefined;
+}
+function selectNode(id) { selectedId = id; renderCanvas(); renderProps(); }
+function delNode(id) {
+  if (!confirm('删除节点 '+id+'？指向它的分支将被置空。')) return;
+  flow.nodes = flow.nodes.filter(function(x){ return x.id!==id; });
+  flow.nodes.forEach(function(n){
+    if (n.next===id) n.next='';
+    if (n.okNext===id) n.okNext='';
+    if (n.failNext===id) n.failNext='';
+    if (n.timeoutNext===id) n.timeoutNext='';
+    if (n.inNext===id) n.inNext='';
+    if (n.outNext===id) n.outNext='';
+    if (n.trueNext===id) n.trueNext='';
+    if (n.falseNext===id) n.falseNext='';
+    Object.keys(n.keys||{}).forEach(function(k){ if (n.keys[k]===id) delete n.keys[k]; });
+  });
+  if (selectedId===id) selectedId = flow.nodes.length ? flow.nodes[0].id : null;
+  dirty(); renderAll();
+}
+
+/* ── 校验 ── */
+function validate() {
+  var issues = [];
+  if (!flow.nodes.length) { issues.push({level:'err', msg:'流程为空。'}); return issues; }
+  var root = flow.nodes[0];
+  /* 出口目标存在性 */
+  flow.nodes.forEach(function(n) {
+    nodeTargets(n).forEach(function(tid) {
+      if (tid!=='AGENT' && tid!=='END' && tid!=='VM' && !nById(tid))
+        issues.push({level:'err', msg:n.id+'（'+n.name+'）存在未设置的出口目标。'});
+    });
+    if (n.type==='MENU' && Object.keys(n.keys||{}).length===0)
+      issues.push({level:'err', msg:n.id+' 按键菜单未配置任何按键分支。'});
+    if (n.type==='TRANSFER' && !n.skill)
+      issues.push({level:'err', msg:n.id+' 转人工未选择技能组。'});
+    if (n.type==='QUERY' && !n.api)
+      issues.push({level:'warn', msg:n.id+' 查询接口地址为空。'});
+    if ((n.type==='PLAY') && !n.next)
+      issues.push({level:'warn', msg:n.id+' 播报后无出口（将挂机）。'});
+  });
+  /* 可达性 BFS */
+  var seen = {}; seen[root.id]=true; var queue=[root.id];
+  while (queue.length) {
+    var cur = nById(queue.shift());
+    nodeTargets(cur).forEach(function(tid){ if(!seen[tid] && nById(tid)){ seen[tid]=true; queue.push(tid); } });
+  }
+  flow.nodes.forEach(function(n){ if(!seen[n.id]) issues.push({level:'warn', msg:n.id+'（'+n.name+'）从入口不可达，将成为死节点。'}); });
+  /* 自动死循环：不经过按键菜单的环 */
+  var COLOR=1, BLACK=2, color={};
+  var stack=[];
+  function dfs(id) {
+    color[id]=COLOR; stack.push(id);
+    var n = nById(id);
+    if (n) (nodeTargets(n).filter(function(t){ return nById(t); })).forEach(function(tid){
+      if (color[tid]===COLOR) {
+        var cyc = stack.slice(stack.indexOf(tid));
+        if (!cyc.some(function(cid){ return nById(cid).type==='MENU'; }))
+          issues.push({level:'err', msg:'存在无按键交互的自动死循环：'+cyc.join(' → ')});
+      } else if (!color[tid]) dfs(tid);
+    });
+    color[id]=BLACK; stack.pop();
+  }
+  dfs(root.id);
+  if (!issues.length) issues.push({level:'ok', msg:'校验通过：出口完整、无死节点、无自动死循环。'});
+  return issues;
+}
+function openValidate() {
+  var issues = validate();
+  var html = issues.map(function(x){
+    return '<div class="issue '+x.level+'">'+(x.level==='err'?'【错误】':x.level==='warn'?'【警告】':'【通过】')+esc(x.msg)+'</div>';
+  }).join('');
+  showModal('逻辑校验报告', html, '<button class="btn" onclick="closeModal()">关闭</button>', true);
+}
+
+/* ── 来电模拟器 ── */
+var sim = null;
+function openSim() {
+  sim = { cur: flow.nodes.length ? flow.nodes[0].id : null, trace: [] };
+  simTrace('来电接入 962269');
+  renderSim();
+}
+function simTrace(s) { if (sim) sim.trace.push(s); }
+function renderSim() {
+  var n = sim.cur === 'AGENT' || sim.cur === 'VM' || sim.cur === 'END' || sim.cur === null ? null : nById(sim.cur);
+  var lcd = '';
+  var keysHtml = '';
+  var foot = '';
+  if (!n) {
+    var endMap = { AGENT:'已转接人工坐席（模拟结束）', VM:'留言完成：ivr_message 已生成，可转工单', END:'通话结束', null:'流程结束' };
+    lcd = '<b>📞 模拟结束</b><br>' + (endMap[sim.cur===undefined?'null':sim.cur] || endMap[null]);
+    foot = '<button class="btn" onclick="closeModal()">关闭</button><button class="btn primary" onclick="openSim()">重新模拟</button>';
+  } else if (n.type==='PLAY') {
+    lcd = '▶ 播报中…<br>'+esc(n.prompt||'（未配置播报文本）');
+    keysHtml = '<button onclick="simGo(\''+ (n.next||'END') +'\')">继续 ▶</button>';
+  } else if (n.type==='MENU') {
+    lcd = esc(n.prompt||'（未配置菜单语音）');
+    keysHtml = Object.keys(n.keys||{}).map(function(k){
+      return '<button onclick="simGo(\''+n.keys[k]+'\')">'+k+'</button>';
+    }).join('') || '<span style="color:#f3c1c1">该菜单未配置按键！</span>';
+  } else if (n.type==='QUERY') {
+    lcd = '⟳ 正在调用查询接口…<br>'+esc(n.api);
+    keysHtml = '<button onclick="simTrace(\'接口返回成功\');simGo(\''+(n.okNext||'END')+'\')">接口成功</button>'+
+               '<button onclick="simTrace(\'接口超时失败\');simGo(\''+(n.failNext||'AGENT')+'\')">接口失败</button>';
+  } else if (n.type==='TRANSFER') {
+    lcd = '☎ 正在转接【'+esc(n.skill||'未设置技能组')+'】…<br>当前排队：第 1 位，预计等待 5 秒';
+    keysHtml = '<button onclick="simGo(\'AGENT\')">接通坐席</button>'+
+               '<button onclick="simTrace(\'排队超时\');simGo(\''+(n.timeoutNext||'VM')+'\')">模拟排队超时</button>';
+  } else if (n.type==='RECORD') {
+    lcd = '🎙 '+esc(n.prompt||'请留言…')+'<br>（滴——开始录音）';
+    keysHtml = '<button onclick="simTrace(\'留言已保存\');simGo(\''+(n.toWorkorder?'VM':'END')+'\')">留言完毕挂机</button>';
+  } else if (n.type==='TIMECHECK') {
+    lcd = '🕐 判断服务时段…';
+    keysHtml = '<button onclick="simGo(\''+(n.inNext||'END')+'\')">时段内</button>'+
+               '<button onclick="simGo(\''+(n.outNext||'VM')+'\')">时段外</button>';
+  } else if (n.type==='COND') {
+    lcd = '∧ 判断条件：'+esc(n.expr||'（未配置）');
+    keysHtml = '<button onclick="simGo(\''+(n.trueNext||'END')+'\')">条件为真</button>'+
+               '<button onclick="simGo(\''+(n.falseNext||'END')+'\')">条件为假</button>';
+  }
+  var trace = sim.trace.map(function(t){ return '› '+t; }).join('<br>');
+  showModal('来电模拟器 · '+esc(flow.name),
+    '<div class="sim-phone"><div class="sim-lcd">'+lcd+'</div><div class="sim-keys">'+keysHtml+'</div>'+
+    '<div class="sim-trace">'+trace+'</div></div>', foot);
+}
+function simGo(target) {
+  simTrace('→ ' + (target==='AGENT'?'转人工':target==='VM'?'留言':target==='END'?'挂机':target));
+  sim.cur = target;
+  renderSim();
+}
+
+/* ── 保存 / 发布 / 导出 ── */
+function dirty(){ savedText='未保存更改'; renderStatus(); }
+function renderStatus() {
+  $id('stSave').textContent = savedText;
+  $id('stStatus').textContent = flow.status;
+  $id('flowMeta').textContent = '绑定号码 962269 · ' + flow.version + ' · ' + flow.status;
+}
+function saveFlow() {
+  flow.name = $id('flowName').value;
+  savedText = '已保存 ' + new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  renderStatus();
+}
+function publish() {
+  var issues = validate();
+  var errs = issues.filter(function(x){ return x.level==='err'; });
+  if (errs.length) { openValidate(); return; }
+  if (!confirm('校验通过，确认发布 IVR 流程？\n发布后即时生效于绑定号码（旧版本自动下线）。')) return;
+  flow.status='已发布';
+  flow.version = 'v' + (parseFloat(flow.version.slice(1))+0.1).toFixed(1);
+  saveFlow();
+  toastMsg('IVR 流程已发布：'+flow.version);
+}
+function exportJson() {
+  flow.name = $id('flowName').value;
+  var blob = new Blob([JSON.stringify(flow,null,2)], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = flow.name+'_IVR.json'; a.click();
+  URL.revokeObjectURL(a.href);
+}
+function toastMsg(msg) {
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;top:70px;right:18px;background:#14532d;color:#fff;padding:10px 16px;border-radius:6px;z-index:99;font-size:13px';
+  document.body.appendChild(t);
+  setTimeout(function(){ t.remove(); }, 3000);
+}
+function showModal(title, body, foot, wide) {
+  $id('modalRoot').innerHTML = '<div class="mask" onclick="if(event.target===this)closeModal()">'+
+    '<div class="modal" style="width:'+(wide?'640px':'460px')+'"><div class="mhead"><b>'+title+'</b><span class="x" onclick="closeModal()">×</span></div>'+
+    '<div class="mbody">'+body+'</div><div class="mfoot">'+(foot||'<button class="btn" onclick="closeModal()">关闭</button>')+'</div></div></div>';
+}
+function closeModal(){ $id('modalRoot').innerHTML=''; }
+
+function renderAll(){ renderCanvas(); renderProps(); renderStatus(); }
+
+/* ── 初始 ── */
+renderPalette();
+renderAll();
+</script>
+</body>
+</html>

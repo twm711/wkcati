@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>督导控制台 · Live（对接 nk3c-demo API）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 1060px; }
+  .topbar { background: #14324f; color: #fff; display: flex; align-items: center; gap: 14px; padding: 8px 14px; flex: 0 0 auto; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .live-tag { background: #27863c; border-radius: 3px; font-size: 11px; padding: 1px 7px; font-weight: bold; }
+  .clock { font-family: Consolas, monospace; font-size: 15px; background: rgba(255,255,255,.12); padding: 2px 10px; border-radius: 4px; }
+  .poll { font-size: 11.5px; color: #9fd0f5; }
+  .spacer { flex: 1; }
+  .chip { background: rgba(255,255,255,.12); border-radius: 14px; padding: 3px 12px; font-size: 12px; }
+  .topbar a.sbtn { text-decoration: none; }
+
+  .sumbar { display: flex; gap: 10px; padding: 8px 14px; background: #f7f9fc; border-bottom: 1px solid #dfe4ea; flex: 0 0 auto; }
+  .sum { background: #fff; border: 1px solid #dfe4ea; border-radius: 5px; padding: 5px 14px; min-width: 100px; }
+  .sum .n { font-size: 19px; font-weight: bold; color: #14324f; font-family: Consolas, monospace; }
+  .sum .t { font-size: 11px; color: #7d8ca0; }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+  .col-l { flex: 1; overflow-y: auto; padding: 12px; background: #eef1f5; min-width: 0; }
+  .col-r { flex: 0 0 400px; border-left: 1px solid #dfe4ea; background: #fff; overflow-y: auto; display: flex; flex-direction: column; }
+  .panel-h { padding: 8px 12px; font-weight: bold; color: #14324f; background: #eef3f9; border-bottom: 1px solid #dfe4ea; display: flex; align-items: center; gap: 8px; }
+  .panel-h .tag { font-weight: normal; font-size: 11px; color: #7d8ca0; }
+  .panel-h .r { margin-left: auto; font-weight: normal; font-size: 11.5px; }
+  .panel-h select { border: 1px solid #d0d7de; border-radius: 4px; padding: 2px 6px; font-size: 11.5px; }
+
+  /* 坐席墙 */
+  .wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .acard { background: #fff; border: 1px solid #dfe4ea; border-top: 4px solid #7a8ba0; border-radius: 6px; padding: 9px 12px; }
+  .acard.TALKING{border-top-color:#c0392b} .acard.DIALING{border-top-color:#6c3fc5} .acard.AUX{border-top-color:#b9770e}
+  .acard.READY{border-top-color:#27863c} .acard.ACW{border-top-color:#2e6da4} .acard.LOGOUT{opacity:.55}
+  .a-head { display: flex; align-items: center; gap: 8px; }
+  .a-no { font-weight: bold; color: #14324f; }
+  .a-state { margin-left: auto; font-size: 11px; font-weight: bold; color: #fff; padding: 1px 8px; border-radius: 9px; background: #7a8ba0; }
+  .a-state.TALKING{background:#c0392b} .a-state.READY{background:#27863c} .a-state.DIALING{background:#6c3fc5}
+  .a-state.AUX{background:#b9770e} .a-state.ACW{background:#2e6da4}
+  .a-line { display: flex; justify-content: space-between; font-size: 12px; color: #556; margin-top: 5px; }
+  .qcbtns { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 7px; border-top: 1px dashed #eef1f5; padding-top: 6px; }
+  .qcb { border: 1px solid #d0d7de; background: #f7f9fc; color: #4a6a94; border-radius: 3px; font-size: 10.5px; padding: 1px 6px; cursor: pointer; }
+  .qcb:hover { border-color: #2e6da4; color: #2e6da4; background: #fff; }
+
+  /* 话务流水表 */
+  table.calls { width: 100%; border-collapse: collapse; background: #fff; font-size: 12px; }
+  table.calls th, table.calls td { border: 1px solid #e6ebf1; padding: 6px 8px; text-align: left; }
+  table.calls th { background: #f2f6fb; color: #4a6a94; }
+  .rcode { font-weight: bold; }
+  .r-SUCCESS{color:#27863c} .r-NA,.r-BUSY{color:#b9770e} .r-INVALID,.r-REFUSE{color:#c0392b} .r-APPOINT{color:#6c3fc5}
+  .st-DIALING{color:#6c3fc5;font-weight:bold} .st-CLOSED{color:#8a97a5}
+
+  /* 右栏 */
+  .quota { padding: 8px 12px; }
+  .q-row { margin-bottom: 8px; }
+  .q-row .q-t { display: flex; justify-content: space-between; font-size: 12px; color: #445; margin-bottom: 2px; }
+  .q-bar { height: 8px; background: #eef1f5; border-radius: 4px; overflow: hidden; }
+  .q-bar i { display: block; height: 100%; background: #2e6da4; }
+  .q-bar i.hot { background: #e67e22; } .q-bar i.full { background: #27863c; }
+  .sheets { flex: 1; overflow-y: auto; min-height: 120px; }
+  .sheet { padding: 8px 12px; border-bottom: 1px dashed #eef1f5; font-size: 12.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .sheet .id { font-family: Consolas, monospace; color: #14324f; font-weight: bold; }
+  .sheet .meta { color: #7d8ca0; }
+  .sheet .ops { margin-left: auto; display: flex; gap: 5px; }
+  .op { border: 1px solid #d0d7de; background: #fff; border-radius: 4px; font-size: 11.5px; padding: 2px 10px; cursor: pointer; }
+  .op.pass { border-color: #bfdcc7; color: #27863c; }
+  .op.rej { border-color: #e0b4b4; color: #c0392b; }
+  .op:hover { filter: brightness(.95); }
+  .modal.wide { width: 700px; }
+  #waveCv { background: #0f1e2e; border-radius: 6px; width: 100%; display: block; }
+  #replayAu { width: 100%; margin: 9px 0 4px; }
+  .arow { display: flex; gap: 8px; padding: 4px 8px; border-radius: 4px; font-size: 12.5px; align-items: center; }
+  .arow .at { font-family: Consolas, monospace; color: #7d8ca0; font-size: 11px; flex: 0 0 58px; }
+  .arow .av { margin-left: auto; font-weight: bold; color: #14324f; }
+  .arow.on { background: #eaf7ed; outline: 1px solid #bfdcc7; }
+  .st-tag { font-size: 11px; padding: 0 7px; border-radius: 3px; background: #eef3f9; color: #4a6a94; }
+  .st-tag.SUBMITTED { background: #fdf3e3; color: #b9770e; }
+  .st-tag.AUDITED { background: #eaf7ed; color: #27863c; }
+  .st-tag.REJECTED { background: #fdeaea; color: #c0392b; }
+  .st-tag.DOING { background: #eef3f9; color: #4a6a94; }
+  .st-tag.VOID { background: #f4f4f4; color: #999; }
+
+  .bars { padding: 10px 12px; }
+  .bar-row { margin-bottom: 8px; font-size: 12px; }
+  .bar-row .bt { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .bar-row .bb { height: 10px; background: #eef1f5; border-radius: 5px; overflow: hidden; }
+  .bar-row .bb i { display: block; height: 100%; background: #2e6da4; }
+
+  .logbox { flex: 0 0 150px; overflow-y: auto; font-family: Consolas, monospace; font-size: 11px; color: #556; padding: 6px 12px; border-top: 1px solid #eef1f5; line-height: 1.7; }
+  .logbox .t { color: #9aa7b6; margin-right: 6px; }
+  .logbox .ok{color:#27863c} .logbox .warn{color:#b9770e} .logbox .err{color:#c0392b} .logbox .sys{color:#6c3fc5}
+  .simbar { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px dashed #e3e8ee; }
+  .sbtn { border: 1px solid #c9d4e0; background: #fff; color: #4a6a94; border-radius: 4px; font-size: 11.5px; padding: 3px 10px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .statusbar { flex: 0 0 28px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center; gap: 20px; padding: 0 14px; color: #667; font-size: 12px; }
+  .toast { position: fixed; top: 66px; right: 18px; z-index: 60; background: #14324f; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.25); display: none; max-width: 340px; }
+  .toast.err { background: #c0392b; } .toast.ok { background: #27863c; } .toast.force { background: #b9770e; }
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 360px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  .modal .mhead { padding: 14px 16px; border-bottom: 1px solid #eef1f5; font-weight: bold; color: #14324f; }
+  .modal .mbody { padding: 14px 16px; }
+  .modal .mbody input { width: 100%; border: 1px solid #d0d7de; border-radius: 4px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; }
+  .modal .merr { color: #c0392b; font-size: 12px; min-height: 16px; margin-bottom: 6px; }
+  .abtn { border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 4px; padding: 7px 18px; cursor: pointer; font-size: 13px; }
+  .abtn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .empty { color: #98a4b3; font-size: 12px; padding: 14px 12px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="logo">督导控制台 <small>对接 nk3c-demo API</small></div>
+    <span class="live-tag">LIVE</span>
+    <div class="spacer"></div>
+    <div class="poll" id="pollInfo">未登录</div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="chip" id="userChip">未签入</div>
+    <a class="sbtn" href="/agent" style="border:1px solid rgba(255,255,255,.4);background:transparent;color:#fff;padding:4px 12px;border-radius:4px">坐席台</a>
+  </div>
+
+  <div class="sumbar" id="sumbar">
+    <div class="sum"><div class="n">-</div><div class="t">今日呼出</div></div>
+    <div class="sum"><div class="n">-</div><div class="t">接通</div></div>
+    <div class="sum"><div class="n">-</div><div class="t">成功</div></div>
+    <div class="sum"><div class="n">-</div><div class="t">呼损</div></div>
+    <div class="sum"><div class="n">-</div><div class="t">坐席在线</div></div>
+  </div>
+
+  <div class="main">
+    <div class="col-l">
+      <div class="panel-h">项目 / 配额总览 <span class="tag">GET /api/project · 多项目并行</span></div>
+      <div class="quota" id="projBox" style="padding:8px 12px"><div class="empty">登录后加载</div></div>
+      <div class="panel-h">坐席监控墙 <span class="tag">/ws/monitor 实时推送 · 断线降级 3s 轮询</span><span class="r" id="wallTime"></span></div>
+      <div class="wall" id="wall" style="padding:10px 12px 14px"></div>
+      <div class="panel-h">话务流水 <span class="tag">/api/monitor/calls</span><span class="r"><button class="sbtn" onclick="loadCalls()">刷新</button></span></div>
+      <div style="padding:10px 12px 16px">
+        <table class="calls">
+          <thead><tr><th>话务</th><th>样本</th><th>坐席</th><th>状态</th><th>结果码</th><th>开始</th><th>接通</th></tr></thead>
+          <tbody id="callsBody"><tr><td colspan="7" class="empty">签入后自动加载</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="col-r">
+      <div class="panel-h">配额进度 <span class="tag">Q11 性别 × target 2</span></div>
+      <div class="quota" id="quotaBox"><div class="empty">登录后加载</div></div>
+      <div class="panel-h">单题实时统计 <span class="tag">SUBMITTED + AUDITED 口径</span></div>
+      <div class="bars" id="statBox"><div class="empty">登录后加载</div></div>
+      <div class="panel-h">答卷审核
+        <span class="r">
+          <select id="sheetFilter" onchange="loadSheets()">
+            <option value="SUBMITTED">待审 SUBMITTED</option>
+            <option value="">全部状态</option>
+            <option value="AUDITED">已通过</option>
+            <option value="REJECTED">已驳回</option>
+          </select>
+          <button class="sbtn" onclick="loadSheets()">刷新</button>
+        </span>
+      </div>
+      <div class="sheets" id="sheets"><div class="empty">登录后加载</div></div>
+      <div class="panel-h">工单流转
+        <span class="tag">IVR 转人工自动落单</span>
+        <span class="r"><select id="wkoFilter" onchange="loadWorkorders()">
+          <option value="">全部状态</option>
+          <option value="PENDING">待受理</option>
+          <option value="ACCEPTED">处理中</option>
+          <option value="RESOLVED">已办结</option>
+          <option value="CLOSED">已归档</option>
+        </select><button class="sbtn" onclick="loadWorkorders()">刷新</button></span>
+      </div>
+      <div class="sheets" id="wkoList" style="max-height:150px"><div class="empty">登录后加载</div></div>
+      <div class="panel-h">系统日志</div>
+      <div class="logbox" id="logbox"></div>
+      <div class="simbar">
+        <span style="color:#7d8ca0;font-size:11px;line-height:22px">导出中心：</span>
+        <button class="sbtn" onclick="dl('/api/export/answers?format=csv','NK3C_答卷明细.csv')">⬇ 答卷CSV</button>
+        <button class="sbtn" onclick="dl('/api/export/answers?format=xlsx','NK3C_答卷明细.xlsx')">⬇ 答卷Excel</button>
+        <button class="sbtn" onclick="dl('/api/export/stats?format=csv','NK3C_统计报表.csv')">⬇ 统计CSV</button>
+        <button class="sbtn" onclick="dl('/api/export/stats?format=xlsx','NK3C_统计报表.xlsx')">⬇ 统计Excel</button>
+        <button class="sbtn" onclick="dl('/api/export/spss?projectId=1','NK3C_数据.sav')">⬇ SPSS(.sav)</button>
+        <a class="sbtn" style="text-decoration:none;text-align:center" href="/ivr">IVR 设计器</a>
+      </div>
+      <div class="simbar">
+        <button class="sbtn" onclick="openReset()">↺ 重置演示数据</button>
+        <a class="sbtn" href="/docs" target="_blank">API 文档</a>
+        <button class="sbtn" onclick="refreshAll(true)">⟳ 立即刷新全部</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span>实时口径：WebSocket 推送（断线自动降级 3s 轮询）；生产为 nagentstateserver → WS 增量推送</span>
+    <span>审核权限：groupAdmin 及以上</span>
+    <span style="margin-left:auto">nk3c-demo · 监控墙/审核对应蓝图 M08 / M09</span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* 督导控制台 Live 版：全部数据来自 nk3c-demo API
+ *  wall      WS /ws/monitor 实时推送（降级 GET /api/monitor/wall 3s 轮询）
+ *  calls     GET /api/monitor/calls    手动/动作后刷新
+ *  quota/统计 GET /api/report/single?questionId=11
+ *  答卷      GET /api/sheet?status=…   POST /api/sheet/{id}/audit
+ *  导出      GET /api/export/answers|stats?format=csv|xlsx（Blob 下载）
+ *  重置      POST /api/sys/reset（domainAdmin，WS 收 reset 事件自动刷新）
+ */
+var token = '', me = null, pollTimer = null, pollBusy = false;
+var ws = null, wsMode = false;   // WS 实时通道状态（失败自动降级为轮询）
+
+function $id(x){ return document.getElementById(x); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nowStr(){ return new Date().toLocaleTimeString('zh-CN',{hour12:false}); }
+
+function toast(msg, cls, ms){
+  var t=$id('toast'); t.innerHTML=msg; t.className='toast '+(cls||''); t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(function(){t.style.display='none';}, ms||3600);
+}
+function log(msg, cls){
+  var b=$id('logbox'); var d=document.createElement('div');
+  d.innerHTML='<span class="t">'+nowStr()+'</span><span class="'+(cls||'')+'">'+msg+'</span>';
+  b.appendChild(d); b.scrollTop=b.scrollHeight;
+}
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({'Content-Type':'application/json'},
+    token ? {'Authorization':'Bearer '+token} : {}, opts.headers||{});
+  if (opts.body && typeof opts.body!=='string') opts.body = JSON.stringify(opts.body);
+  var res;
+  try { res = await fetch(path, opts); }
+  catch(e){ toast('无法连接 API：请在【NK3C 演示系统】预览中打开','err',6000); throw e; }
+  if (res.status===401){ showLogin('会话失效，请重新签入'); throw new Error('401'); }
+  var j = await res.json();
+  if (res.status>=500){ toast('服务器错误：'+esc(j.detail||j.message||''),'err'); throw new Error('500'); }
+  return j;
+}
+
+/* ── 登录 ── */
+function showLogin(msg){
+  stopPoll();
+  $id('modalRoot').innerHTML = '<div class="mask"><div class="modal">'+
+    '<div class="mhead">督导签入 · nk3c-demo</div><div class="mbody">'+
+    '<div class="merr" id="lgErr">'+(msg?esc(msg):'')+'</div>'+
+    '<input id="lgName" value="sup01" placeholder="登录名（sup01 / admin）">'+
+    '<input id="lgPass" type="password" value="123456" placeholder="密码">'+
+    '<div class="empty" style="padding:4px 0 0">督导可见：监控墙 / 话务流水 / 答卷审核 / 实时统计（审核需 groupAdmin+）</div></div>'+
+    '<div class="mfoot"><button class="abtn" onclick="closeModal()">取消</button>'+
+    '<button class="abtn primary" id="lgBtn" onclick="doLogin()">签 入</button></div></div></div>';
+}
+async function doLogin(){
+  var btn=$id('lgBtn'); btn.disabled=true; $id('lgErr').textContent='';
+  try{
+    var r=await api('/api/auth/login',{method:'POST',body:{loginName:$id('lgName').value.trim(),password:$id('lgPass').value}});
+    if(!r.success){ $id('lgErr').textContent=r.message; btn.disabled=false; return; }
+    token=r.data.sessionId; me=r.data;
+    if(me.roles.indexOf('groupAdmin')<0 && me.roles.indexOf('orgAdmin')<0 && me.roles.indexOf('domainAdmin')<0){
+      $id('lgErr').textContent='需要督导及以上角色（groupAdmin/orgAdmin/domainAdmin）'; btn.disabled=false; return;
+    }
+    closeModal();
+    $id('userChip').textContent=me.userName+' · '+me.roles.join('/');
+    log('签入成功：'+me.userName+'（'+me.roles.join(',')+'）','ok');
+    connectWS();
+    refreshAll(true);
+  }catch(e){ $id('lgErr').textContent='网络异常'; btn.disabled=false; }
+}
+function closeModal(){ $id('modalRoot').innerHTML=''; }
+
+/* ── 轮询 ── */
+function startPoll(){
+  stopPoll();
+  var left=3;
+  pollTimer=setInterval(function(){
+    left-=1;
+    $id('pollInfo').textContent=left+'s 后刷新';
+    if(left<=0){ left=3; refreshWall(); }
+  },1000);
+}
+function stopPoll(){ clearInterval(pollTimer); pollTimer=null; $id('pollInfo').textContent='已停止'; }
+
+/* ── WebSocket 实时通道（/ws/monitor）──
+ * 连接即收监控墙快照；此后 dispatch/result/audit/reset 由服务端事件驱动推送。
+ * 断线/创建失败 → 自动降级为 3s HTTP 轮询（生产同款兜底策略）。 */
+function connectWS(){
+  var proto = location.protocol==='https:' ? 'wss://' : 'ws://';
+  try { ws = new WebSocket(proto+location.host+'/ws/monitor?token='+encodeURIComponent(token)); }
+  catch(e){ fallbackPoll('WebSocket 创建失败'); return; }
+  ws.onopen = function(){
+    wsMode = true; stopPoll();
+    $id('pollInfo').innerHTML='<b style="color:#7ee2a0">● WS 实时推送</b>';
+    log('实时通道已建立（GET /ws/monitor）','ok');
+  };
+  ws.onmessage = function(ev){
+    var m; try{ m=JSON.parse(ev.data); }catch(e){ return; }
+    if(m.type==='wall'){ renderWall(m.data); loadQuotaAndStat(); loadProjects(); loadWorkorders(); }
+    else if(m.type==='qclog'){ log('质检：'+esc(m.data.actionName)+' → 工号 '+esc(m.data.agentNo)+'（'+esc(m.data.by)+'）','warn'); }
+    else if(m.type==='reset'){ toast('系统已重置，即将刷新页面','ok'); setTimeout(function(){ location.reload(); },1200); }
+  };
+  ws.onclose = function(){ if(wsMode){ wsMode=false; if(token) fallbackPoll('连接已断开'); } };
+  ws.onerror = function(){ /* onclose 随后触发，统一在那里降级 */ };
+}
+function fallbackPoll(reason){
+  if(wsMode) return;
+  log(reason+' → 降级为 3s 轮询（/api/monitor/wall）','warn');
+  $id('pollInfo').textContent='轮询 3s（降级）';
+  startPoll();
+}
+
+/* ── 导出中心（fetch+Blob 下载，带 Bearer）── */
+async function dl(url, name){
+  try{
+    var res = await fetch(url, {headers:{'Authorization':'Bearer '+token}});
+    if(res.status===401){ showLogin('会话失效，请重新签入'); return; }
+    var j=null; try{ j = await res.clone().json(); }catch(e){}
+    if(j && j.success===false){ toast('导出失败：'+esc(j.message),'err'); return; }
+    var blob = await res.blob();
+    var a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); },4000);
+    log('导出成功：'+name+'（'+blob.size+' 字节）','ok');
+    toast('已导出 '+name,'ok');
+  }catch(e){ toast('导出失败：网络异常','err'); }
+}
+
+async function refreshWall(){
+  if(pollBusy) return; pollBusy=true;
+  try{
+    var r=await api('/api/monitor/wall');
+    if(r.success){ renderWall(r.data); loadQuotaAndStat(); }
+  }catch(e){}
+  pollBusy=false;
+}
+async function loadCalls(){
+  if(!token) return;
+  try{
+    var r=await api('/api/monitor/calls?limit=12');
+    if(!r.success) return;
+    var tb=$id('callsBody');
+    if(!r.data.length){ tb.innerHTML='<tr><td colspan="7" class="empty">暂无话务记录</td></tr>'; return; }
+    tb.innerHTML=r.data.map(function(c){
+      return '<tr><td>#'+c.id+'</td><td>'+(c.sample_id?('#'+c.sample_id+' '+esc(c.cust_name||'')):'-')+'</td>'+
+        '<td>'+esc(c.agent_no||'-')+'</td>'+
+        '<td class="st-'+esc(c.status)+'">'+esc(c.status)+'</td>'+
+        '<td class="rcode r-'+esc(c.result_code||'')+'">'+esc(c.result_code||'—')+'</td>'+
+        '<td>'+esc((c.begin_time||'').replace('T',' ').slice(5,19))+'</td>'+
+        '<td>'+esc((c.connect_time||'').replace('T',' ').slice(11,19))+'</td></tr>';
+    }).join('');
+  }catch(e){}
+}
+function qcBtn(act, label, a){
+  return '<button class="qcb" onclick="qc(\''+act+'\',\''+esc(a.agentNo||'')+'\')">'+label+'</button>';
+}
+async function qc(act, agentNo){
+  if(!agentNo){ toast('该账号无工号，无法质检','err'); return; }
+  if(act==='FORCEHANGUP' && !confirm('确认强制挂断工号 '+agentNo+' 的通话？坐席将被置入话后处理。')) return;
+  if(act==='FORCECHECKOUT' && !confirm('确认强制签出工号 '+agentNo+'？其全部会话将立即失效。')) return;
+  var note = prompt('质检备注（坐席台将展示，可空）','')||'';
+  try{
+    var r = await api('/api/monitor/qc',{method:'POST',body:{agentNo:agentNo,action:act,note:note}});
+    if(!r.success){ toast('质检失败：'+esc(r.message),'err'); return; }
+    log('质检指令：'+r.data.actionName+' → 工号 '+agentNo+'（WS 已下发）','warn');
+    toast(r.message,'force');
+  }catch(e){}
+}
+function renderWall(d){
+  var s=d.summary;
+  $id('sumbar').innerHTML=
+    sum(s.dialCount,'今日呼出')+sum(s.connectCount,'接通')+sum(s.successCount,'成功')+sum(s.abandonCount||0,'呼损')+
+    sum(d.agents.length,'坐席账号');
+  function sum(n,t){ return '<div class="sum"><div class="n">'+n+'</div><div class="t">'+t+'</div></div>'; }
+  var html=d.agents.map(function(a){
+    return '<div class="acard '+esc(a.state)+'"><div class="a-head"><span class="a-no">'+esc(a.agentNo||'-')+'</span>'+
+      '<span style="color:#667;font-size:12px">'+esc(a.userName)+'</span>'+
+      '<span class="a-state '+esc(a.state)+'">'+esc(a.state)+'</span></div>'+
+      '<div class="a-line"><span>样本</span><span>'+(a.sampleId?('S-'+a.sampleId):'-')+'</span></div>'+
+      '<div class="a-line"><span>话务</span><span>'+(a.callId?('#'+a.callId):'-')+'</span></div>'+
+      '<div class="qcbtns">'+
+      qcBtn('LISTEN','🎧 监听',a)+qcBtn('INSERT','💬 插话',a)+qcBtn('SETBUSY','🚫 示忙',a)+
+      qcBtn('SETIDLE','✅ 示闲',a)+qcBtn('FORCEHANGUP','📴 强挂',a)+qcBtn('FORCECHECKOUT','⏏ 签出',a)+
+      '</div></div>';
+  }).join('');
+  $id('wall').innerHTML=html;
+  $id('wallTime').textContent='更新于 '+nowStr();
+}
+async function loadWorkorders(){
+  if(!token) return;
+  try{
+    var st=$id('wkoFilter').value;
+    var r=await api('/api/workorder'+(st?('?status='+st):''));
+    if(!r.success) return;
+    if(!r.data.rows.length){ $id('wkoList').innerHTML='<div class="empty">暂无工单（在 IVR 设计器模拟呼入按 0 转人工即可自动落单）</div>'; return; }
+    var STc={PENDING:'#b9770e',ACCEPTED:'#2e6da4',RESOLVED:'#27863c',CLOSED:'#98a4b3'};
+    $id('wkoList').innerHTML=r.data.rows.map(function(w){
+      var ops='';
+      if(w.status==='PENDING') ops='<button class="op" style="border-color:#bfdcc7;color:#27863c" onclick="wkoAct('+w.id+',\'accept\')">受理</button>';
+      else if(w.status==='ACCEPTED') ops='<button class="op" style="border-color:#bfdcc7;color:#27863c" onclick="wkoAct('+w.id+',\'resolve\')">办结</button>';
+      else if(w.status==='RESOLVED') ops='<button class="op" onclick="wkoAct('+w.id+',\'close\')">归档</button>';
+      return '<div class="sheet"><span class="id">#'+w.id+'</span>'+
+        '<span style="font-size:10.5px;color:#fff;background:'+STc[w.status]+';border-radius:8px;padding:0 7px">'+w.status+'</span>'+
+        '<span>'+esc(w.subject)+' · 主叫 '+esc(w.caller_no)+'</span>'+
+        (w.revisit_sample_id?'<span class="meta" style="color:#27863c">↻ 回访样本 #'+w.revisit_sample_id+'</span>':'')+
+        (w.agent_name?'<span class="meta">'+esc(w.agent_name)+'</span>':'')+
+        '<span class="ops">'+ops+'</span></div>';
+    }).join('');
+  }catch(e){}
+}
+async function wkoAct(id, act){
+  var remark = act==='resolve' ? (prompt('办结备注：','已电话回复客户')||'') : '';
+  if(act==='close' && !confirm('确认归档工单 #'+id+'？')) return;
+  try{
+    var r=await api('/api/workorder/'+id+'/'+act,{method:'POST',body:{remark:remark}});
+    if(!r.success){ toast('操作失败：'+esc(r.message),'err'); return; }
+    log('工单 #'+id+' → '+r.data.status,'ok');
+    toast(r.message,'ok');
+    loadWorkorders();
+  }catch(e){}
+}
+async function loadProjects(){
+  try{
+    var r=await api('/api/project');
+    if(!r.success) return;
+    $id('projBox').innerHTML=r.data.map(function(p){
+      var q=p.quota, pct=q.target?Math.round(q.done/q.target*100):0;
+      var cls=pct>=100?'full':(pct>=90?'hot':'');
+      var stc=p.status==='RUNNING'?'#27863c':(p.status==='DRAFT'?'#98a4b3':'#b9770e');
+      return '<div style="border:1px solid #eef1f5;border-radius:6px;padding:6px 10px;background:#fff">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center">'+
+        '<b style="font-size:12.5px;color:#14324f">'+esc(p.name)+'</b>'+
+        '<span style="font-size:10.5px;color:#fff;background:'+stc+';border-radius:8px;padding:0 8px">'+esc(p.status)+'</span></div>'+
+        '<div style="display:flex;justify-content:space-between;font-size:11px;color:#7d8ca0;margin:3px 0">'+
+        '<span>问卷 '+esc(p.qnrVersion||'-')+'('+esc(p.qnrStatus||'-')+')</span>'+
+        '<span>样本 idle '+p.samples.idle+' / '+p.samples.total+'</span></div>'+
+        (q.target?'<div class="q-t" style="font-size:11px;color:#445">配额 '+q.done+' / '+q.target+'（'+pct+'%）</div>'+
+        '<div class="q-bar" style="margin-top:2px"><i class="'+cls+'" style="width:'+Math.min(100,pct)+'%"></i></div>':'')+
+        '</div>';
+    }).join('') || '<div class="empty">无项目</div>';
+  }catch(e){}
+}
+async function loadQuotaAndStat(){
+  try{
+    var r=await api('/api/report/single?questionId=11');
+    if(!r.success) return;
+    var d=r.data;
+    $id('quotaBox').innerHTML=(d.quota||[]).map(function(q){
+      var pct=q.target?Math.round(q.done/q.target*100):0;
+      var cls=pct>=100?'full':(pct>=90?'hot':'');
+      return '<div class="q-row"><div class="q-t"><span>配额格 #'+q.cellId+'</span><b>'+q.done+' / '+q.target+'（'+pct+'%）</b></div>'+
+        '<div class="q-bar"><i class="'+cls+'" style="width:'+Math.min(100,pct)+'%"></i></div></div>';
+    }).join('') || '<div class="empty">无配额数据</div>';
+    $id('statBox').innerHTML='<div class="bar-row"><div class="bt"><span>有效作答总数</span><b>'+d.total+'</b></div></div>'+
+      d.items.map(function(i){
+        return '<div class="bar-row"><div class="bt"><span>'+esc(i.label)+'</span><b>'+i.count+'（'+i.pct+'%）</b></div>'+
+          '<div class="bb"><i style="width:'+i.pct+'%"></i></div></div>';
+      }).join('');
+  }catch(e){}
+}
+async function loadSheets(){
+  if(!token) return;
+  var st=$id('sheetFilter').value;
+  try{
+    var r=await api('/api/sheet'+(st?('?status='+st):''));
+    if(!r.success) return;
+    var rows=r.data.rows;
+    if(!rows.length){ $id('sheets').innerHTML='<div class="empty">该状态下无答卷</div>'; return; }
+    $id('sheets').innerHTML=rows.map(function(s){
+      var canAudit = s.status==='SUBMITTED';
+      return '<div class="sheet"><span class="id">#'+s.id+'</span>'+
+        '<span class="meta">样本 #'+s.sample_id+' · 坐席 #'+s.agent_id+' · '+esc(s.qnr_version||'')+'</span>'+
+        '<span class="st-tag '+esc(s.status)+'">'+esc(s.status)+'</span>'+
+        '<span class="ops">'+
+        '<button class="op" onclick="openReplay('+s.id+')">▶ 回放</button>'+
+        (canAudit?'<button class="op pass" onclick="audit('+s.id+',\'PASS\')">✓ 通过</button>'+
+                   '<button class="op rej" onclick="audit('+s.id+',\'REJECT\')">✗ 驳回</button>':'')+
+        '</span></div>';
+    }).join('');
+  }catch(e){}
+}
+async function audit(id, action){
+  var remark = action==='PASS' ? '录音比对无误' : (prompt('驳回原因（将生成重访任务）：','关键题漏问')||'');
+  if(action==='REJECT' && !remark) return;
+  if(!confirm('确认【'+(action==='PASS'?'通过':'驳回')+'】答卷 #'+id+'？')) return;
+  try{
+    var r=await api('/api/sheet/'+id+'/audit',{method:'POST',body:{action:action,remark:remark}});
+    if(!r.success){ toast('审核失败：'+esc(r.message),'err'); return; }
+    log('答卷 #'+id+' 审核 → '+r.data.status+(action==='REJECT'?'（样本已回池，生成重访）':''),'ok');
+    toast('答卷 #'+id+' → '+r.data.status,'ok');
+    closeReplay();
+    loadSheets(); refreshWall();
+  }catch(e){}
+}
+
+/* ── 录音回放同步质检（S2）：真实波形 + 播放进度与答案同步高亮 ── */
+var replayState = { raf: null };
+function closeReplay(){
+  replayState.alive = false;          // 渲染循环检测到 DOM 移除后自动停止
+  $id('modalRoot').innerHTML='';
+  replayState = { alive: false };
+}
+async function openReplay(sheetId){
+  var d = await api('/api/sheet/'+sheetId+'/answers');
+  if(!d.success){ toast('回放失败：'+esc(d.message),'err'); return; }
+  var sh=d.data.sheet, au=d.data.audio!==undefined?d.data.audio:null;
+  var canAudit = sh.status==='SUBMITTED';
+  var rows=d.data.answers.map(function(a,i){
+    var cue=d.data.cues[i]||{};
+    return '<div class="arow" id="arow-'+a.questionId+'">'+
+      '<span class="at">'+fmtT(cue.offset||0)+'</span><b>'+esc(a.title)+'</b>'+
+      '<span>答案：</span><span class="av">'+esc(a.value||'-')+'</span></div>';
+  }).join('');
+  var stCls=esc(sh.status);
+  $id('modalRoot').innerHTML='<div class="mask"><div class="modal wide">'+
+    '<div class="mhead">录音回放 · 答卷 #'+sh.id+' · 样本 #'+sh.sample_id+' '+esc(sh.cust_name||'')+
+    ' · 坐席 '+esc(sh.agent_no||'-')+' <span class="st-tag '+stCls+'">'+stCls+'</span></div>'+
+    '<div class="mbody">'+
+    '<canvas id="waveCv" width="640" height="88"></canvas>'+
+    '<audio id="replayAu" controls preload="auto" src="/api/qc/recording/'+sh.call_id+'?token='+encodeURIComponent(token)+'"></audio>'+
+    '<div id="ansList">'+(rows||'<div class="empty">该答卷无作答记录</div>')+'</div>'+
+    '<div class="q-tip">演示音轨由服务端按答卷地标合成（每题对应时刻发提示音）；生产对接录音存储，按 aud_start/aud_end 对齐答案同步定位。</div>'+
+    '</div><div class="mfoot">'+
+    (canAudit?'<button class="abtn" onclick="audit('+sh.id+',\'PASS\')">✓ 通过</button> '+
+               '<button class="abtn" onclick="audit('+sh.id+',\'REJECT\')">✗ 驳回</button> ':'')+
+    '<button class="abtn" onclick="closeReplay()">关 闭</button></div></div></div>';
+  replayState = { alive: true };
+  drawWave(d.data);
+}
+function fmtT(t){ var m=Math.floor(t/60), s=(t%60); return m+':'+(s<10?'0':'')+s.toFixed(1); }
+function drawWave(d){
+  var cv=$id('waveCv'); if(!cv) return;
+  var au=$id('replayAu');
+  var ctx=cv.getContext('2d');
+  var peaks=null;
+  var fetches = fetch('/api/qc/recording/'+d.sheet.call_id+'?token='+encodeURIComponent(token))
+    .then(function(r){ return r.arrayBuffer(); })
+    .then(function(buf){ return new (window.AudioContext||window.webkitAudioContext)().decodeAudioData(buf); })
+    .then(function(audio){ 
+      var ch=audio.getChannelData(0), N=200, step=Math.floor(ch.length/N);
+      peaks=[];
+      for(var i=0;i<N;i++){ var mx=0; for(var j=i*step;j<(i+1)*step&&j<ch.length;j+=16){ var v=Math.abs(ch[j]); if(v>mx)mx=v; } peaks.push(mx); }
+      d._total = audio.duration;
+    })
+    .catch(function(){ peaks=null; });
+  function render(){
+    if(!replayState.alive || !$id('waveCv')) return;
+    var W=cv.width, H=cv.height, total=d._total||d.duration;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#0f1e2e'; ctx.fillRect(0,0,W,H);
+    var t=au.currentTime||0;
+    if(peaks){
+      var bw=W/peaks.length, mid=H/2;
+      for(var i=0;i<peaks.length;i++){
+        var x=i*bw, frac=i/peaks.length;
+        ctx.fillStyle = frac<=t/total ? '#6fc2ff' : '#2a4a6a';
+        var h=Math.max(2, peaks[i]*(H-14));
+        ctx.fillRect(x, mid-h/2, Math.max(1,bw-1), h);
+      }
+    } else {
+      ctx.fillStyle='#2a4a6a'; ctx.fillRect(0,H/2-1,W,2);
+    }
+    (d.cues||[]).forEach(function(c){
+      var x=c.offset/total*W;
+      ctx.strokeStyle='#e8b98a'; ctx.setLineDash([3,3]);
+      ctx.beginPath(); ctx.moveTo(x,4); ctx.lineTo(x,H-4); ctx.stroke(); ctx.setLineDash([]);
+    });
+    if(t>0){
+      var px=t/total*W;
+      ctx.strokeStyle='#e74c3c'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke(); ctx.lineWidth=1;
+    }
+    var cur=null;
+    (d.cues||[]).forEach(function(c){ if(t>=c.offset) cur=c.questionId; });
+    (d.answers||[]).forEach(function(a){
+      var el=$id('arow-'+a.questionId); if(!el) return;
+      if(cur===a.questionId){ el.className='arow on'; }
+      else el.className='arow';
+    });
+    replayState.raf=requestAnimationFrame(render);
+  }
+  render();
+}
+
+/* ── 重置 ── */
+async function openReset(){
+  var pwd=prompt('输入 admin 密码以重置演示数据（恢复种子样本池/配额/答卷）','123456');
+  if(pwd===null) return;
+  try{
+    var lr=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({loginName:'admin',password:pwd})}).then(function(r){return r.json();});
+    if(!lr.success){ toast('重置失败：'+esc(lr.message),'err'); return; }
+    var rr=await fetch('/api/sys/reset',{method:'POST',headers:{'Authorization':'Bearer '+lr.data.sessionId}}).then(function(r){return r.json();});
+    if(!rr.success){ toast('重置失败：'+esc(rr.message),'err'); return; }
+    toast('演示数据已重置，请重新签入','ok');
+    log('系统重置（POST /api/sys/reset）','sys');
+    setTimeout(function(){ location.reload(); },1400);
+  }catch(e){ toast('网络异常','err'); }
+}
+
+function refreshAll(manual){
+  if(!token) return;
+  refreshWall();
+  loadCalls();
+  loadSheets();
+  loadProjects();
+  loadWorkorders();
+  if(manual) log('手动刷新全部数据','sys');
+}
+
+setInterval(function(){ $id('clock').textContent=nowStr(); },1000);
+$id('clock').textContent=nowStr();
+log('=== 督导控制台 Live 版已加载 ===');
+log('数据源：nk3c-demo API · 监控墙 WS 实时推送 · 导出中心 · 审核走真实状态机','sys');
+</script>
+</body>
+</html>

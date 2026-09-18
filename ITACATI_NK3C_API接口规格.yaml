@@ -1,0 +1,852 @@
+# ============================================================================
+#  南康 ITACATI / NK3C 类 CATI 系统 · REST API 接口规格（OpenAPI 3.0）
+# ============================================================================
+openapi: 3.0.3
+info:
+  title: NK3C 云联络中心 / ITACATI 电访专家 · API 规格
+  description: |
+    按 NK3C 公开工程规范设计的接口蓝本。约定（源自公开资料【S6】与行业标准）：
+    - **响应统一 ResultInfo 封装**：`{ success, code, message, data }`；前端必须处理 success=false 分支；
+    - **ID 一律以 String 传输**（后端 Long 18 位精度，JS Number 仅 16 位）；
+    - **路径全小写**（UNIX 大小写敏感）；控制器名与资源名一致；
+    - **鉴权**：Shiro 会话，登录后携带 `Authorization: Bearer <sessionId>`；
+    - **分页**：`pageNum/pageSize`，返回 `PageResult{ total, rows }`；
+    - **幂等**：结果码提交、工单动作以 `Idempotency-Key` 头或业务键幂等；
+    - **权限码**：domainAdmin / orgAdmin / groupAdmin / phoneAdmin【S7】，按资源 Code 控权。
+  version: 1.0.0
+servers:
+  - url: http://{host}:{port}/nweb
+    description: 单体部署（nweb 应用）
+    variables:
+      host: { default: localhost }
+      port: { default: "8080" }
+
+tags:
+  - name: auth          # 认证
+  - name: org           # M02 组织权限
+  - name: project       # M03 项目管理
+  - name: questionnaire # M04 问卷管理
+  - name: sample        # M05 样本管理
+  - name: strategy      # M06 呼叫策略
+  - name: agent         # M07 坐席端
+  - name: monitor       # M08 实时监控
+  - name: answer        # M09 答卷管理
+  - name: report        # M10 统计报表
+  - name: export        # M11 数据导出
+  - name: qc            # M12 质检管理
+  - name: workorder     # M13 工单管理
+  - name: ivr           # M14 IVR
+  - name: sys           # M15 系统维护
+
+paths:
+  # ── 认证 ─────────────────────────────────────────────
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: 登录（写 sys_login_log）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [loginName, password]
+              properties:
+                loginName: { type: string, example: agent01 }
+                password:  { type: string, format: password }
+      responses:
+        "200":
+          description: 登录结果（success=false 时 message 给出原因）
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResultInfo'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessionId: { type: string }
+                          userId:    { type: string, description: 18 位 ID 字符串 }
+                          userName:  { type: string }
+                          roles:     { type: array, items: { type: string }, example: [phoneAdmin] }
+                          perms:     { type: array, items: { type: string }, description: 资源 Code 列表，前端按 Code 控权 }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: 登出
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M02 组织权限 ─────────────────────────────────────
+  /api/org/domain:
+    get:
+      tags: [org]
+      summary: 域列表（domainAdmin）
+      parameters: [{ $ref: '#/components/parameters/pageNum' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { "200": { $ref: '#/components/responses/PageOfDomain' } }
+    post:
+      tags: [org]
+      summary: 新建域
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Domain' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/org/group:
+    get:
+      tags: [org]
+      summary: 组列表（坐席组/访问员组/技能组）
+      parameters:
+        - { name: orgId, in: query, schema: { type: string } }
+        - { name: groupType, in: query, schema: { type: string, enum: [AGENT, INTERVIEWER, SKILL, QC] } }
+      responses: { "200": { $ref: '#/components/responses/PageOfGroup' } }
+    post: { tags: [org], summary: 新建组, requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Group' } } } }, responses: { "200": { $ref: '#/components/responses/ResultOk' } } }
+
+  /api/org/user:
+    get:
+      tags: [org]
+      summary: 员工列表（工号段内取号唯一【S7】）
+      parameters:
+        - { name: groupId, in: query, schema: { type: string } }
+        - { $ref: '#/components/parameters/pageNum' }
+        - { $ref: '#/components/parameters/pageSize' }
+      responses: { "200": { $ref: '#/components/responses/PageOfUser' } }
+    post: { tags: [org], summary: 新建员工, requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/User' } } } }, responses: { "200": { $ref: '#/components/responses/ResultOk' } } }
+
+  /api/org/user/{id}/disable:
+    post:
+      tags: [org]
+      summary: 停用员工（级联强制签出 + 派样锁样本回收）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/org/role/{roleId}/resources:
+    put:
+      tags: [org]
+      summary: 角色-资源授权（资源树勾选）
+      parameters: [{ name: roleId, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { resourceIds: { type: array, items: { type: string } } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M03 项目管理 ─────────────────────────────────────
+  /api/project:
+    get:
+      tags: [project]
+      summary: 项目列表（含配额进度/成功率，取自视图 v_project_progress）
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [DRAFT, TESTING, RUNNING, PAUSED, FINISHED, ARCHIVED] } }
+        - { name: projectType, in: query, schema: { type: string, enum: [SURVEY, MARKETING, CALLBACK, INBOUND] } }
+        - { $ref: '#/components/parameters/pageNum' }
+        - { $ref: '#/components/parameters/pageSize' }
+      responses: { "200": { $ref: '#/components/responses/PageOfProject' } }
+    post:
+      tags: [project]
+      summary: 新建项目（五步向导一次性提交）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [projectName, projectType, questionnaireId, strategyId, groupIds]
+              properties:
+                projectName:    { type: string }
+                projectType:    { type: string, enum: [SURVEY, MARKETING, CALLBACK, INBOUND] }
+                questionnaireId: { type: string, description: 仅接受 PUBLISHED 问卷 }
+                strategyId:     { type: string }
+                groupIds:       { type: array, items: { type: string } }
+                startTime:      { type: string, format: date-time }
+                endTime:        { type: string, format: date-time }
+                dailyBegin:     { type: string, example: "09:00" }
+                dailyEnd:       { type: string, example: "20:00" }
+                sampleFilter:   { type: object, description: 样本范围条件（批次/字段筛选） }
+                quotaId:        { type: string }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+
+  /api/project/{id}:
+    get:
+      tags: [project]
+      summary: 项目详情（含绑定引用）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { $ref: '#/components/responses/ResultOfProject' } }
+    put:
+      tags: [project]
+      summary: 修改项目（ARCHIVED 只读，非法状态返回 success=false）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/project/{id}/status:
+    post:
+      tags: [project]
+      summary: 项目控制（启动/试访切换/暂停/恢复/终止/归档；服务端校验状态机 4.2.1）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [START, GO_FORMAL, PAUSE, RESUME, FINISH, ARCHIVE] }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/project/{id}/distribute:
+    post:
+      tags: [project]
+      summary: 分发项目到子库（父子项目；子库问卷版本锁定）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { targetDbTags: { type: array, items: { type: string } } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/project/{id}/schedule:
+    put:
+      tags: [project]
+      summary: 保存项目排班（prj_schedule）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ScheduleItem' } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M04 问卷管理 ─────────────────────────────────────
+  /api/questionnaire:
+    get:
+      tags: [questionnaire]
+      summary: 问卷列表（版本/状态）
+      parameters: [{ $ref: '#/components/parameters/pageNum' }, { $ref: '#/components/parameters/pageSize' }]
+      responses: { "200": { $ref: '#/components/responses/PageOfQuestionnaire' } }
+    post:
+      tags: [questionnaire]
+      summary: 新建问卷（JSON 结构：questions/options/logic/quota，与设计器导出格式一致）
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/QuestionnaireDoc' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+
+  /api/questionnaire/{id}:
+    get:
+      tags: [questionnaire]
+      summary: 问卷完整结构（设计器加载）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: 问卷结构
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResultInfo'
+                  - type: object
+                    properties: { data: { $ref: '#/components/schemas/QuestionnaireDoc' } }
+    put:
+      tags: [questionnaire]
+      summary: 保存问卷（仅 DRAFT/TESTING 可改；PUBLISHED 走 /publish 生成新版本）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/QuestionnaireDoc' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/questionnaire/{id}/validate:
+    post:
+      tags: [questionnaire]
+      summary: 逻辑校验（空题干/选项不足/跳转失效/死题 BFS/数值范围）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          description: 校验报告
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResultInfo'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            level: { type: string, enum: [err, warn, ok] }
+                            qNo:   { type: integer }
+                            msg:   { type: string }
+  /api/questionnaire/{id}/publish:
+    post:
+      tags: [questionnaire]
+      summary: 发布（强制校验通过；版本 +0.1；支持执行中调整，坐席端热更新【S3】【S4】）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M05 样本管理 ─────────────────────────────────────
+  /api/sample/import:
+    post:
+      tags: [sample]
+      summary: 样本导入（Excel/CSV；域内查重；返回批次号与报告）
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:     { type: string, format: binary }
+                fieldMap: { type: string, description: 列→字段映射 JSON（含自定义字段 ext_json） }
+      responses: { "200": { $ref: '#/components/responses/ResultOfImport' } }
+
+  /api/sample/random-generate:
+    post:
+      tags: [sample]
+      summary: 随机抽样生成（号段/区域规则；Mitofsky-Waksberg 两阶段可选【S10】；自动打散）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:     { type: integer, example: 1000 }
+                rules:     { type: object, description: 号段/区号/分层规则 }
+                algorithm: { type: string, enum: [RANDOM, SYSTEMATIC, STRATIFIED, WAKSBERG], default: RANDOM }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/sample/assign:
+    post:
+      tags: [sample]
+      summary: 样本批分配（按条件→坐席/访问员组；写 smp_assign_log）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filter:  { type: object }
+                groupId: { type: string }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  /api/sample/{id}/blacklist:
+    post:
+      tags: [sample]
+      summary: 加入黑名单（GLOBAL/PROJECT 级）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { scope: { type: string, enum: [GLOBAL, PROJECT] }, reason: { type: string } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M06 呼叫策略 ─────────────────────────────────────
+  /api/strategy:
+    get:  { tags: [strategy], summary: 策略列表, responses: { "200": { $ref: '#/components/responses/PageOfStrategy' } } }
+    post:
+      tags: [strategy]
+      summary: 新建策略（模式/呼损率上限/重拨/时段/主显号）
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/Strategy' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+
+  # ── M07 坐席端 ───────────────────────────────────────
+  /api/agent/login:
+    post:
+      tags: [agent]
+      summary: 坐席签入（联动软电话 NKZXAgent【S7】；写 cti_agent_state_log LOGIN）
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/agent/state:
+    post:
+      tags: [agent]
+      summary: 状态切换（READY/AUX 带原因码）
+      requestBody: { content: { application/json: { schema: { type: object, properties: { state: { type: string, enum: [READY, AUX] }, reason: { type: string } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/agent/dial:
+    post:
+      tags: [agent]
+      summary: 预览呼出（对派样锁内样本发起呼叫）
+      requestBody: { content: { application/json: { schema: { type: object, properties: { sampleId: { type: string }, phoneIndex: { type: integer, description: 一人多号选择第几个号码 } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/agent/answer:
+    post:
+      tags: [agent]
+      summary: 单题答案实时提交（幂等 upsert；断线续答依据）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sheetId:     { type: string }
+                questionId:  { type: string }
+                optionIds:   { type: array, items: { type: string } }
+                answerText:  { type: string }
+                numericValue: { type: number }
+                matrixValues: { type: object }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/agent/result:
+    post:
+      tags: [agent]
+      summary: 提交电话结束状态码（幂等：callId+code；触发样本去向判定 4.2.3）
+      parameters: [{ $ref: '#/components/parameters/idemKey' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [callId, resultCode]
+              properties:
+                callId:    { type: string }
+                resultCode: { type: string, example: SUCCESS }
+                appointment:
+                  type: object
+                  description: 结果码=APPOINT 时必填
+                  properties:
+                    apptTime: { type: string, format: date-time }
+                    remark:   { type: string }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/agent/dispatch:
+    get:
+      tags: [agent]
+      summary: 取样（坐席就绪时取一条；服务端执行派样 SQL 附录1；无样本返回 data=null）
+      responses: { "200": { $ref: '#/components/responses/ResultOfSample' } }
+
+  # ── M08 实时监控 ─────────────────────────────────────
+  /api/monitor/wall:
+    get:
+      tags: [monitor]
+      summary: 坐席监控墙（实时快照；生产建议 WebSocket 增量推送）
+      responses: { "200": { $ref: '#/components/responses/ResultOfWall' } }
+  /api/monitor/listen:
+    post:
+      tags: [monitor]
+      summary: 监听/插话（LISTEN 旁听 / BARGE 三方；写 cti_monitor_event【S5】）
+      requestBody: { content: { application/json: { schema: { type: object, required: [callId, action], properties: { callId: { type: string }, action: { type: string, enum: [LISTEN, BARGE, STOP] } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/monitor/force:
+    post:
+      tags: [monitor]
+      summary: 强制操作（强挂/强忙/强闲/强签出【S5】）
+      requestBody: { content: { application/json: { schema: { type: object, required: [agentId, action], properties: { agentId: { type: string }, action: { type: string, enum: [FORCEHANGUP, FORCEBUSY, FORCEIDLE, FORCELOGOUT] }, reason: { type: string } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/monitor/message:
+    post:
+      tags: [monitor]
+      summary: 督导发消息（坐席端 toast【S1】）
+      requestBody: { content: { application/json: { schema: { type: object, properties: { agentId: { type: string }, text: { type: string } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M09 答卷管理 ─────────────────────────────────────
+  /api/sheet:
+    get:
+      tags: [answer]
+      summary: 答卷列表（项目/坐席/结果码/状态筛选）
+      parameters:
+        - { name: projectId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [DOING, SUBMITTED, AUDITED, REJECTED, VOID] } }
+        - { $ref: '#/components/parameters/pageNum' }
+        - { $ref: '#/components/parameters/pageSize' }
+      responses: { "200": { $ref: '#/components/responses/PageOfSheet' } }
+  /api/sheet/{id}/audit:
+    post:
+      tags: [answer]
+      summary: 审核（通过/驳回/作废；驳回自动生成重访；批量以 ids 传入）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [PASS, REJECT, VOID] }, remark: { type: string }, score: { type: number } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/sheet/{id}/codes:
+    put:
+      tags: [answer]
+      summary: 开放题编码保存（AUTO/MANUAL 来源）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: array, items: { type: object, properties: { questionId: { type: string }, code: { type: string } } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M10 统计报表 ─────────────────────────────────────
+  /api/report/single:
+    get:
+      tags: [report]
+      summary: 单题频数（实时口径 T+1s【S3】）
+      parameters:
+        - { name: projectId, in: query, required: true, schema: { type: string } }
+        - { name: questionId, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: 频数表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ResultInfo'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          total: { type: integer }
+                          items:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                optionValue: { type: string }
+                                optionLabel: { type: string }
+                                count: { type: integer }
+                                pct:   { type: number }
+  /api/report/cross:
+    get:
+      tags: [report]
+      summary: 交叉统计（两题或题×样本字段）
+      parameters:
+        - { name: projectId, in: query, required: true, schema: { type: string } }
+        - { name: rowQuestionId, in: query, required: true, schema: { type: string } }
+        - { name: colQuestionId, in: query, required: true, schema: { type: string } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/report/traffic:
+    get:
+      tags: [report]
+      summary: 话务统计（rpt_day_project/rpt_day_agent）
+      parameters: [{ name: projectId, in: query, schema: { type: string } }, { name: beginDate, in: query, schema: { type: string, format: date } }, { name: endDate, in: query, schema: { type: string, format: date } }]
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M11 数据导出 ─────────────────────────────────────
+  /api/export/task:
+    post:
+      tags: [export]
+      summary: 创建导出任务（Excel/SPSS/Quantum/Txt；需导出审批时置 PENDING_APPROVAL）
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exportType, fileFormat]
+              properties:
+                projectId:   { type: string }
+                exportType:  { type: string, enum: [DATA, RECORDING, ACCOUNT, QUOTA] }
+                fileFormat:  { type: string, enum: [XLSX, SPSS, QUANTUM, TXT, ZIP] }
+                filter:      { type: object }
+                includeDict: { type: boolean, description: SPSS 变量/值标签 }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+  /api/export/task/{id}/download:
+    get:
+      tags: [export]
+      summary: 下载导出文件（未审批返回 403 语义的 success=false）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { description: 文件流 } }
+
+  # ── M12 质检 ─────────────────────────────────────────
+  /api/qc/task:
+    post:
+      tags: [qc]
+      summary: 生成质检任务（按比例/指定坐席）
+      requestBody: { content: { application/json: { schema: { type: object, properties: { projectId: { type: string }, sampleRule: { type: string, enum: [RATE, AGENT, MANUAL] }, rate: { type: number, example: 10 } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+  /api/qc/result:
+    post:
+      tags: [qc]
+      summary: 提交质检评分（致命项一票否决由服务端判定）
+      requestBody: { content: { application/json: { schema: { type: object, properties: { taskId: { type: string }, callId: { type: string }, qcType: { type: string, enum: [RECORDING, SHEET, WORKORDER] }, scores: { type: array, items: { type: object, properties: { itemId: { type: string }, score: { type: number } } } }, remark: { type: string } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M13 工单 ─────────────────────────────────────────
+  /api/workorder:
+    get:
+      tags: [workorder]
+      summary: 工单列表（多渠道来源筛选【S5】）
+      parameters: [{ name: sourceChannel, in: query, schema: { type: string, enum: [PHONE, WECHAT, WEIBO, SMS, EMAIL, WEBCHAT] } }, { name: status, in: query, schema: { type: string, enum: [OPEN, PROCESSING, WAITING, CLOSED, CANCELED] } }]
+      responses: { "200": { $ref: '#/components/responses/PageOfWorkorder' } }
+    post:
+      tags: [workorder]
+      summary: 创建工单（呼入弹屏/留言转单/回访联动）
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/WorkorderCreate' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+  /api/workorder/{id}/action:
+    post:
+      tags: [workorder]
+      summary: 工单动作（受理/转办/催办/结案/重开；按 wfm_node.next_json 流转）
+      parameters: [{ $ref: '#/components/parameters/idemKey' }, { name: id, in: path, required: true, schema: { type: string } }]
+      requestBody: { content: { application/json: { schema: { type: object, required: [action], properties: { action: { type: string, enum: [ACCEPT, TRANSFER, URGE, CLOSE, REOPEN] }, targetUserId: { type: string }, remark: { type: string } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+  # ── M14 IVR ──────────────────────────────────────────
+  /api/ivr/flow:
+    get:  { tags: [ivr], summary: IVR 流程列表, responses: { "200": { $ref: '#/components/responses/ResultOk' } } }
+    post:
+      tags: [ivr]
+      summary: 保存 IVR 流程（nodes 结构与设计器 JSON 一致）
+      requestBody: { content: { application/json: { schema: { $ref: '#/components/schemas/IvrFlowDoc' } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+  /api/ivr/flow/{id}/publish:
+    post:
+      tags: [ivr]
+      summary: 发布 IVR（校验通过强制；旧版本下线）
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+  /api/ivr/message/{id}/to-workorder:
+    post:
+      tags: [ivr]
+      summary: 留言转工单
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { "200": { $ref: '#/components/responses/ResultOfId' } }
+
+  # ── M15 系统维护 ─────────────────────────────────────
+  /api/sys/param:
+    get: { tags: [sys], summary: 参数列表（半年原则/重拨/呼损率/录音留存等）, responses: { "200": { $ref: '#/components/responses/ResultOk' } } }
+    put:
+      tags: [sys]
+      summary: 修改参数（≤5 分钟全局热生效；写审计）
+      requestBody: { content: { application/json: { schema: { type: array, items: { type: object, properties: { paramCode: { type: string }, paramValue: { type: string } } } } } } }
+      responses: { "200": { $ref: '#/components/responses/ResultOk' } }
+
+# ─────────────────────────────────────────────────────────
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, description: "Shiro sessionId" }
+  parameters:
+    pageNum:  { name: pageNum,  in: query, schema: { type: integer, default: 1 } }
+    pageSize: { name: pageSize, in: query, schema: { type: integer, default: 20 } }
+    idemKey:  { name: Idempotency-Key, in: header, required: false, schema: { type: string }, description: 幂等键（结果码/工单动作） }
+  schemas:
+    ResultInfo:
+      type: object
+      required: [success, code]
+      description: 统一响应封装【S6】
+      properties:
+        success: { type: boolean }
+        code:    { type: string, example: "0", description: "0 成功；4xx 业务拒绝；5xx 系统错误" }
+        message: { type: string, example: ok }
+        data:    {}
+    PageResult:
+      type: object
+      properties:
+        total: { type: integer }
+        rows:  { type: array, items: {} }
+    Domain:
+      type: object
+      properties: { id: { type: string }, domainCode: { type: string }, domainName: { type: string }, dbTag: { type: string }, status: { type: integer } }
+    Group:
+      type: object
+      properties: { id: { type: string }, orgId: { type: string }, groupCode: { type: string }, groupName: { type: string }, groupType: { type: string }, skillTags: { type: string } }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        userNo: { type: string, description: 工号段内唯一 }
+        userName: { type: string }
+        loginName: { type: string }
+        groupId: { type: string }
+        agentNo: { type: string, description: 软电话工号 }
+    Project:
+      type: object
+      properties:
+        id: { type: string }
+        projectCode: { type: string }
+        projectName: { type: string }
+        projectType: { type: string }
+        status: { type: string }
+        questionnaireId: { type: string }
+        strategyId: { type: string }
+        successRatePct: { type: number }
+        sampleLeft: { type: integer }
+    QuestionnaireDoc:
+      type: object
+      description: 与问卷设计器导出 JSON 同构
+      properties:
+        title: { type: string }
+        version: { type: string }
+        status: { type: string, enum: [DRAFT, TESTING, PUBLISHED, OFFLINE] }
+        questions:
+          type: array
+          items:
+            type: object
+            properties:
+              qid: { type: string }
+              type: { type: string, enum: [single, multi, sort, text, number, date, scale, assign, matrix, matrix3d, order_multi, dummy, calc, info, screen, repeat, appt, endstat] }
+              title: { type: string }
+              required: { type: boolean }
+              random: { type: boolean }
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    oid: { type: string }
+                    text: { type: string }
+                    jump: { type: string, description: "next | end | qid" }
+              rows: { type: array, items: { type: string } }
+              cols: { type: array, items: { type: string } }
+              min: { type: number }
+              max: { type: number }
+        logics:
+          type: array
+          items:
+            type: object
+            properties:
+              logicType: { type: string, enum: [SHOW, JUMP, VALIDATE, CALC] }
+              expr: { type: string, example: "Q3>7 AND Q4 CONTAINS 2" }
+              targetQid: { type: string }
+        quotas:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              cells:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    conditions: { type: array, items: { type: object } }
+                    targetCount: { type: integer }
+                    overflow: { type: boolean }
+    Strategy:
+      type: object
+      properties:
+        projectId: { type: string }
+        callMode: { type: string, enum: [PREDICTIVE, PREVIEW, AUTO, MIXED] }
+        maxAbandonRate: { type: number, example: 3.0 }
+        dialRatio: { type: number, example: 1.5 }
+        redialMax: { type: integer, example: 3 }
+        redialIntervalMin: { type: integer, example: 60 }
+        callerNo: { type: string }
+        timeWindows:
+          type: array
+          items:
+            type: object
+            properties: { weekdays: { type: string, example: "1,2,3,4,5" }, beginTime: { type: string, example: "09:00" }, endTime: { type: string, example: "20:00" } }
+    Sample:
+      type: object
+      properties:
+        id: { type: string }
+        custName: { type: string }
+        phones: { type: array, items: { type: object, properties: { no: { type: string }, sortNo: { type: integer }, valid: { type: boolean } } } }
+        status: { type: string, enum: [IDLE, ASSIGNED, INCALL, SUCCESS, FAIL, APPOINT, BANNED, RECYCLED] }
+        callAttempts: { type: integer }
+        ext: { type: object, description: 自定义字段值 }
+    ScheduleItem:
+      type: object
+      properties: { groupId: { type: string }, shiftDate: { type: string, format: date }, beginTime: { type: string }, endTime: { type: string }, planAgents: { type: integer } }
+    WorkorderCreate:
+      type: object
+      properties:
+        templateId: { type: string }
+        sourceChannel: { type: string, enum: [PHONE, WECHAT, WEIBO, SMS, EMAIL, WEBCHAT] }
+        callId: { type: string }
+        custPhone: { type: string }
+        title: { type: string }
+        content: { type: string }
+        priority: { type: string, enum: [HIGH, MID, LOW] }
+        fieldValues: { type: object, description: 自定义字段 code→value }
+    IvrFlowDoc:
+      type: object
+      description: 与 IVR 设计器导出 JSON 同构
+      properties:
+        name: { type: string }
+        inboundNo: { type: string }
+        nodes:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              type: { type: string, enum: [PLAY, MENU, QUERY, TRANSFER, RECORD, TIMECHECK, COND] }
+              name: { type: string }
+              prompt: { type: string }
+              keys: { type: object, description: "按键→目标节点/AGENT/VM/END" }
+              next: { type: string }
+              okNext: { type: string }
+              failNext: { type: string }
+              timeoutNext: { type: string }
+              skill: { type: string }
+  responses:
+    ResultOk:
+      description: 统一响应
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ResultInfo' }
+    ResultOfId:
+      description: 返回新建 ID
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ResultInfo' }
+              - type: object
+                properties: { data: { type: string } }
+    ResultOfProject:
+      description: 项目详情
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ResultInfo' }
+              - type: object
+                properties: { data: { $ref: '#/components/schemas/Project' } }
+    ResultOfSample:
+      description: 派样结果（无样本 data=null）
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ResultInfo' }
+              - type: object
+                properties: { data: { $ref: '#/components/schemas/Sample' } }
+    ResultOfWall:
+      description: 监控墙快照
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ResultInfo' }
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      agents:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            agentNo: { type: string }
+                            state: { type: string, enum: [LOGOUT, READY, AUX, DIALING, RINGING, TALKING, ACW] }
+                            projectCode: { type: string }
+                            sampleId: { type: string }
+                            talkSec: { type: integer }
+                      summary:
+                        type: object
+                        properties:
+                          online: { type: integer }
+                          ready: { type: integer }
+                          talking: { type: integer }
+                          dialCount: { type: integer }
+                          connectCount: { type: integer }
+                          successCount: { type: integer }
+                          abandonRate: { type: number }
+    ResultOfImport:
+      description: 导入报告
+      content:
+        application/json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/ResultInfo' }
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      batchNo: { type: string }
+                      total: { type: integer }
+                      inserted: { type: integer }
+                      duplicated: { type: integer }
+                      failed: { type: integer }
+    PageOfDomain:
+      description: 分页-域
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfGroup:
+      description: 分页-组
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfUser:
+      description: 分页-用户
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfProject:
+      description: 分页-项目
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfQuestionnaire:
+      description: 分页-问卷
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfStrategy:
+      description: 分页-策略
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfSheet:
+      description: 分页-答卷
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+    PageOfWorkorder:
+      description: 分页-工单
+      content: { application/json: { schema: { allOf: [{ $ref: '#/components/schemas/ResultInfo' }, { type: object, properties: { data: { $ref: '#/components/schemas/PageResult' } } }] } } }
+
+security:
+  - bearerAuth: []

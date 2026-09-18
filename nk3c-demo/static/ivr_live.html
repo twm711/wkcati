@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IVR 流程设计器 · Live（对接 nk3c-demo API）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 1150px; }
+  .topbar { background: #14324f; color: #fff; display: flex; align-items: center; gap: 14px; padding: 8px 14px; flex: 0 0 auto; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .live-tag { background: #27863c; border-radius: 3px; font-size: 11px; padding: 1px 7px; font-weight: bold; }
+  .spacer { flex: 1; }
+  .chip { background: rgba(255,255,255,.12); border-radius: 14px; padding: 3px 12px; font-size: 12px; }
+  .sbtn { border: 1px solid #c9d4e0; background: #fff; color: #4a6a94; border-radius: 4px; font-size: 12px; padding: 4px 12px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .topbar a.sbtn { background: transparent; border-color: rgba(255,255,255,.4); color: #fff; }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+  .col-d { flex: 0 0 470px; border-right: 1px solid #dfe4ea; display: flex; flex-direction: column; background: #f2f5f9; }
+  .col-r { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #eef1f5; }
+  .panel-h { padding: 8px 12px; font-weight: bold; color: #14324f; background: #eef3f9; border-bottom: 1px solid #dfe4ea; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .panel-h .tag { font-weight: normal; font-size: 11px; color: #7d8ca0; }
+  .panel-h .r { margin-left: auto; font-weight: normal; display: flex; gap: 6px; align-items: center; }
+
+  /* 设计器 */
+  .designer { flex: 1; overflow-y: auto; padding: 10px; }
+  .nrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .nrow label { color: #7d8ca0; font-size: 11.5px; flex: 0 0 64px; text-align: right; }
+  .nrow input[type=text], .nrow select, .nrow textarea { border: 1px solid #d0d7de; border-radius: 4px; padding: 4px 7px; font-size: 12px; font-family: inherit; }
+  .nrow textarea { width: 100%; resize: vertical; }
+  .nrow select { max-width: 200px; }
+  .node { background: #fff; border: 1px solid #dfe4ea; border-left: 4px solid #7a8ba0; border-radius: 6px; padding: 9px 11px 7px; margin-bottom: 9px; }
+  .node.play{border-left-color:#2e6da4} .node.menu{border-left-color:#6c3fc5} .node.question{border-left-color:#27863c}
+  .node.voicemail{border-left-color:#b9770e} .node.transfer{border-left-color:#c0392b} .node.end{border-left-color:#7a8ba0}
+  .n-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .n-id { font-family: Consolas, monospace; font-weight: bold; color: #14324f; }
+  .n-type { font-size: 11px; color: #fff; padding: 0 8px; border-radius: 8px; background: #7a8ba0; }
+  .n-type.play{background:#2e6da4} .n-type.menu{background:#6c3fc5} .n-type.question{background:#27863c}
+  .n-type.voicemail{background:#b9770e} .n-type.transfer{background:#c0392b}
+  .entry-star { font-size: 10.5px; background: #fdf3e3; color: #b9770e; border-radius: 3px; padding: 0 6px; }
+  .n-del { margin-left: auto; border: none; background: none; color: #c0392b; cursor: pointer; font-size: 14px; }
+  .kv { display: flex; align-items: center; gap: 6px; margin: 4px 0 0 72px; }
+  .kv .k { width: 46px; border: 1px solid #d0d7de; border-radius: 4px; padding: 3px 6px; font-size: 12px; text-align: center; font-family: Consolas, monospace; }
+  .kv .arrow { color: #98a4b3; }
+  .kv input { flex: 1; border: 1px solid #d0d7de; border-radius: 4px; padding: 3px 7px; font-size: 12px; min-width: 60px; }
+  .kv .rm { border: none; background: none; color: #c0392b; cursor: pointer; }
+  .addkv { margin: 5px 0 0 72px; border: 1px dashed #b9c6d4; background: none; color: #4a6a94; border-radius: 4px; font-size: 11.5px; padding: 2px 10px; cursor: pointer; }
+  .designer-foot { flex: 0 0 auto; padding: 9px 12px; background: #fff; border-top: 1px solid #dfe4ea; display: flex; gap: 8px; align-items: center; }
+  .abtn { border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 4px; padding: 6px 14px; cursor: pointer; font-size: 12.5px; }
+  .abtn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .abtn ghost, .abtn.ghost { background: #f2f5f9; }
+  .verr { color: #c0392b; font-size: 12px; flex: 1; }
+  .vok { color: #27863c; font-size: 12px; flex: 1; }
+
+  /* 话机模拟器 */
+  .phone-wrap { display: flex; gap: 14px; padding: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .phone { flex: 0 0 280px; background: #1b2836; border-radius: 16px; padding: 14px 14px 16px; box-shadow: 0 8px 22px rgba(0,0,0,.28); }
+  .lcd { background: #9fd8a2; color: #143; border-radius: 6px; min-height: 92px; padding: 9px 11px; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.55; overflow: hidden; }
+  .lcd .t { color: #2a5a34; font-size: 10.5px; display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .lcd.err { background: #e8a79d; }
+  .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-top: 11px; }
+  .keys button { border: none; border-radius: 8px; background: #2c3d50; color: #dfe9f3; font-size: 16px; padding: 9px 0; cursor: pointer; font-family: Consolas, monospace; }
+  .keys button:hover { background: #3a4f66; }
+  .keys button:active { background: #6fc2ff; color: #10304a; }
+  .keys button.small { font-size: 11px; padding: 8px 0; }
+  .vmrow { margin-top: 9px; display: none; gap: 5px; }
+  .vmrow input { flex: 1; border: 1px solid #46607e; background: #22364b; color: #dfe9f3; border-radius: 5px; padding: 5px 8px; font-size: 12px; }
+  .phone-side { flex: 1; min-width: 300px; display: flex; flex-direction: column; gap: 10px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .anschip { background: #eaf7ed; color: #27863c; border: 1px solid #bfdcc7; border-radius: 12px; padding: 2px 10px; font-size: 12px; }
+  .transcript { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; height: 205px; overflow-y: auto; padding: 8px 10px; font-size: 12px; line-height: 1.75; }
+  .transcript .step { margin-bottom: 2px; }
+  .transcript .nn { color: #2e6da4; font-family: Consolas, monospace; }
+  .transcript .inv { color: #c0392b; }
+  .transcript .press { color: #b9770e; font-family: Consolas, monospace; }
+  .logbox { flex: 1; overflow-y: auto; font-family: Consolas, monospace; font-size: 11px; color: #556; padding: 6px 4px; line-height: 1.7; min-height: 60px; }
+  .logbox .t { color: #9aa7b6; margin-right: 6px; }
+  .logbox .ok{color:#27863c} .logbox .warn{color:#b9770e} .logbox .err{color:#c0392b} .logbox .sys{color:#6c3fc5}
+
+  /* 来电记录 */
+  .logs { flex: 1; overflow-y: auto; padding: 10px 14px 16px; }
+  table.calls { width: 100%; border-collapse: collapse; background: #fff; font-size: 12px; }
+  table.calls th, table.calls td { border: 1px solid #e6ebf1; padding: 5px 8px; text-align: left; }
+  table.calls th { background: #f2f6fb; color: #4a6a94; }
+  .oc { font-weight: bold; }
+  .oc-SURVEY{color:#27863c} .oc-VOICEMAIL{color:#b9770e} .oc-INFO{color:#4a6a94} .oc-ABANDONED{color:#c0392b} .oc-TRANSFER{color:#6c3fc5}
+  .toast { position: fixed; top: 60px; right: 18px; z-index: 60; background: #14324f; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.25); display: none; max-width: 340px; }
+  .toast.err { background: #c0392b; } .toast.ok { background: #27863c; }
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.55); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 360px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+  .modal .mhead { padding: 14px 16px; border-bottom: 1px solid #eef1f5; font-weight: bold; color: #14324f; }
+  .modal .mbody { padding: 14px 16px; }
+  .modal .mbody input { width: 100%; border: 1px solid #d0d7de; border-radius: 4px; padding: 8px 10px; font-size: 13px; margin-bottom: 10px; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; }
+  .modal .merr { color: #c0392b; font-size: 12px; min-height: 16px; margin-bottom: 6px; }
+  .empty { color: #98a4b3; font-size: 12px; padding: 10px; }
+  .statusbar { flex: 0 0 26px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center; gap: 20px; padding: 0 14px; color: #667; font-size: 11.5px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="logo">IVR 流程设计器 <small>对接 nk3c-demo API</small></div>
+    <span class="live-tag">LIVE</span>
+    <div class="spacer"></div>
+    <div class="chip" id="flowMeta">流程未加载</div>
+    <div class="chip" id="userChip">未签入</div>
+    <a class="sbtn" href="/agent">坐席台</a>
+    <a class="sbtn" href="/supervisor">督导台</a>
+  </div>
+
+  <div class="main">
+    <div class="col-d">
+      <div class="panel-h">流程编排
+        <span class="tag">GET/PUT /api/ivr/flow · 保存即生效（下一通呼入）</span>
+        <span class="r"><button class="sbtn" onclick="reloadFlow()">↺ 还原服务端流程</button></span>
+      </div>
+      <div class="designer" id="designer"><div class="empty">签入后加载流程</div></div>
+      <div class="designer-foot">
+        <button class="abtn" onclick="addNode()">＋节点</button>
+        <button class="abtn primary" onclick="saveFlow()">💾 保存并发布</button>
+        <span class="verr" id="verr"></span>
+      </div>
+    </div>
+
+    <div class="col-r">
+      <div class="panel-h">话机模拟器
+        <span class="tag">POST /api/ivr/call → /input → /hangup</span>
+        <span class="r">
+          <button class="sbtn" id="btnCall" onclick="newCall()">📞 模拟呼入</button>
+          <button class="sbtn" id="btnHang" onclick="hangup()" disabled>📴 挂断</button>
+        </span>
+      </div>
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="lcd" id="lcd"><div class="t"><span>NK3C IVR</span><span id="lcdMeta">待呼入</span></div><div id="lcdText">按【📞 模拟呼入】开始</div></div>
+          <div class="keys">
+            <button onclick="press('1')">1</button><button onclick="press('2')">2</button><button onclick="press('3')">3</button>
+            <button onclick="press('4')">4</button><button onclick="press('5')">5</button><button onclick="press('6')">6</button>
+            <button onclick="press('7')">7</button><button onclick="press('8')">8</button><button onclick="press('9')">9</button>
+            <button onclick="press('*")">*</button><button onclick="press('0')">0</button><button onclick="press('#')">#</button>
+          </div>
+          <div class="vmrow" id="vmrow">
+            <input id="vmText" placeholder="留言内容（模拟录音）">
+            <button class="sbtn" onclick="sendVm()">留言</button>
+          </div>
+        </div>
+        <div class="phone-side">
+          <div class="chips" id="ansChips"></div>
+          <div class="transcript" id="transcript"><div class="empty">通话轨迹将在此逐条显示</div></div>
+          <div class="logbox" id="logbox"></div>
+        </div>
+      </div>
+      <div class="panel-h">来电记录
+        <span class="tag">GET /api/ivr/logs</span>
+        <span class="r"><button class="sbtn" onclick="loadLogs()">刷新</button></span>
+      </div>
+      <div class="logs">
+        <table class="calls">
+          <thead><tr><th>#</th><th>主叫</th><th>结局</th><th>走线路径</th><th>按键答案</th><th>开始</th></tr></thead>
+          <tbody id="logsBody"><tr><td colspan="6" class="empty">暂无来电</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span>种子流程：欢迎 → 菜单（1 调研 / 2 留言 / 0 转人工）→ Q1 性别 → Q2 打分 → 结束</span>
+    <span>演示为按键模拟；生产对接语音网关（放音/收号/转接队列）</span>
+    <span style="margin-left:auto">对应蓝图 M11 IVR · S4 任意级跳转/留言/转人工</span>
+  </span>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* IVR 流程设计器 Live 版：流程存取走 /api/ivr/flow，呼入模拟走 /api/ivr/call*
+ * 设计器 = 结构化节点编辑（存 JSON）；话机 = 真实按键走线（menu 分流/question 记答案/voicemail 留言）*/
+var token = '', me = null, flow = null, fname = '', sid = null, cur = null;
+var TYPES = ['play', 'menu', 'question', 'voicemail', 'transfer', 'end'];
+var TYPEn = { play: '放音', menu: '菜单', question: '问题', voicemail: '留言', transfer: '转人工', end: '结束' };
+var OCn = { SURVEY: '完成调研', VOICEMAIL: '语音留言', INFO: '咨询结束', ABANDONED: '主叫放弃', 'TRANSFER:MANUAL': '转人工' };
+
+function $id(x){ return document.getElementById(x); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function nowStr(){ return new Date().toLocaleTimeString('zh-CN',{hour12:false}); }
+function toast(msg, cls, ms){
+  var t=$id('toast'); t.innerHTML=msg; t.className='toast '+(cls||''); t.style.display='block';
+  clearTimeout(t._h); t._h=setTimeout(function(){t.style.display='none';}, ms||3600);
+}
+function log(msg, cls){
+  var b=$id('logbox'); var d=document.createElement('div');
+  d.innerHTML='<span class="t">'+nowStr()+'</span><span class="'+(cls||'')+'">'+msg+'</span>';
+  b.appendChild(d); b.scrollTop=b.scrollHeight;
+}
+
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({'Content-Type':'application/json'},
+    token ? {'Authorization':'Bearer '+token} : {}, opts.headers||{});
+  if (opts.body && typeof opts.body!=='string') opts.body = JSON.stringify(opts.body);
+  var res;
+  try { res = await fetch(path, opts); }
+  catch(e){ toast('无法连接 API：请在【NK3C 演示系统】预览中打开','err',6000); throw e; }
+  if (res.status===401){ showLogin('会话失效，请重新签入'); throw new Error('401'); }
+  return await res.json();
+}
+
+/* ── 登录 ── */
+function showLogin(msg){
+  $id('modalRoot').innerHTML = '<div class="mask"><div class="modal">'+
+    '<div class="mhead">签入 · IVR 设计器</div><div class="mbody">'+
+    '<div class="merr" id="lgErr">'+(msg?esc(msg):'')+'</div>'+
+    '<input id="lgName" value="admin" placeholder="登录名（admin / sup01 / agent01）">'+
+    '<input id="lgPass" type="password" value="123456" placeholder="密码">'+
+    '<div class="empty" style="padding:4px 0 0">模拟呼入任意账号可用；保存流程需 groupAdmin+（admin / sup01）</div></div>'+
+    '<div class="mfoot"><button class="abtn" onclick="closeModal()">取消</button>'+
+    '<button class="abtn primary" id="lgBtn" onclick="doLogin()">签 入</button></div></div></div>';
+}
+async function doLogin(){
+  $id('lgErr').textContent='';
+  try{
+    var r=await api('/api/auth/login',{method:'POST',body:{loginName:$id('lgName').value.trim(),password:$id('lgPass').value}});
+    if(!r.success){ $id('lgErr').textContent=r.message; return; }
+    token=r.data.sessionId; me=r.data; closeModal();
+    $id('userChip').textContent=me.userName+' · '+me.roles.join('/');
+    log('签入成功：'+me.userName,'ok');
+    reloadFlow(); loadLogs();
+  }catch(e){ $id('lgErr').textContent='网络异常'; }
+}
+function closeModal(){ $id('modalRoot').innerHTML=''; }
+
+/* ── 流程存取 ── */
+async function reloadFlow(){
+  var r=await api('/api/ivr/flow');
+  if(!r.success){ toast('流程加载失败：'+esc(r.message),'err'); return; }
+  flow=r.data.flow; fname=r.data.name;
+  $id('flowMeta').textContent=fname+' · 更新 '+ (r.data.updatedAt||'').replace('T',' ').slice(5,16);
+  log('流程已加载：'+flow.nodes.length+' 个节点，入口 '+flow.entry,'sys');
+  renderDesigner();
+}
+async function saveFlow(){
+  $id('verr').textContent=''; $id('verr').className='verr';
+  var r=await api('/api/ivr/flow',{method:'PUT',body:{name:fname,flow:flow}});
+  if(!r.success){ $id('verr').textContent=r.message; toast('保存失败：'+esc(r.message),'err',6000); return; }
+  $id('verr').textContent='✓ '+r.message; $id('verr').className='vok';
+  toast('流程已发布，下一通呼入按新流程走线','ok');
+  log('PUT /api/ivr/flow 保存成功（'+flow.nodes.length+' 节点）','ok');
+  reloadFlow();
+}
+
+/* ── 设计器渲染（结构变更重渲染；文本编辑只更新 state 不重渲染，避免失焦）── */
+function renderDesigner(){
+  var h='<div class="nrow"><label>流程名称</label><input type="text" style="flex:1" value="'+esc(fname)+'" oninput="fname=this.value"></div>';
+  h+='<div class="nrow"><label>入口节点</label><select onchange="flow.entry=this.value">';
+  flow.nodes.forEach(function(n){ h+='<option '+(n.id===flow.entry?'selected':'')+'>'+esc(n.id)+'</option>'; });
+  h+='</select></div>';
+  flow.nodes.forEach(function(n,i){ h+=nodeHtml(n,i); });
+  $id('designer').innerHTML=h;
+}
+function optsHtml(sel, allowEmpty){
+  var h = allowEmpty?'<option value="">—无—</option>':'';
+  flow.nodes.forEach(function(n){ h+='<option '+(n.id===sel?'selected':'')+'>'+esc(n.id)+'</option>'; });
+  return h;
+}
+function nodeHtml(n,i){
+  var h='<div class="node '+n.type+'"><div class="n-head">'+
+    '<span class="n-id">'+esc(n.id)+'</span>'+
+    '<select class="n-type '+n.type+'" style="border:none;cursor:pointer" onchange="chType('+i+',this.value)">'+
+    TYPES.map(function(t){ return '<option value="'+t+'" '+(t===n.type?'selected':'')+'>'+TYPEn[t]+'</option>'; }).join('')+
+    '</select>'+
+    (n.id===flow.entry?'<span class="entry-star">★ 入口</span>':'')+
+    (n.id===flow.entry?'':'<button class="n-del" title="删除节点" onclick="delNode('+i+')">✕</button>')+
+    '</div>'+
+    '<div class="nrow"><label>播报文本</label><textarea rows="2" oninput="flow.nodes['+i+'].text=this.value">'+esc(n.text||'')+'</textarea></div>';
+  if(n.type!=='end'){
+    h+='<div class="nrow"><label>完成后转</label><select onchange="flow.nodes['+i+'].next=this.value">'+optsHtml(n.next,false)+'</select></div>';
+  }
+  if(n.type==='menu'){
+    Object.keys(n.branches||{}).forEach(function(k,j){
+      h+='<div class="kv"><input class="k" value="'+esc(k)+'" oninput="keyKv('+i+',\'branches\','+j+',this.value)">'+
+         '<span class="arrow">→</span><select onchange="valKv('+i+',\'branches\','+j+',this.value)">'+optsHtml(n.branches[k],false)+'</select>'+
+         '<button class="rm" onclick="rmKv('+i+',\'branches\','+j+')">✕</button></div>';
+    });
+    h+='<button class="addkv" onclick="addKv('+i+',\'branches\')">＋按键分支</button>';
+  }
+  if(n.type==='question'){
+    h+='<div class="nrow"><label>答案标识</label><input type="text" style="width:110px" value="'+esc(n.tag||'')+'" oninput="flow.nodes['+i+'].tag=this.value"></div>';
+    Object.keys(n.options||{}).forEach(function(k,j){
+      h+='<div class="kv"><input class="k" value="'+esc(k)+'" oninput="keyKv('+i+',\'options\','+j+',this.value)">'+
+         '<span class="arrow">→</span><input value="'+esc(n.options[k])+'" oninput="valKv('+i+',\'options\','+j+',this.value)">'+
+         '<button class="rm" onclick="rmKv('+i+',\'options\','+j+')">✕</button></div>';
+    });
+    h+='<button class="addkv" onclick="addKv('+i+',\'options\')">＋按键选项</button>';
+  }
+  if(n.type==='transfer'){
+    h+='<div class="nrow"><label>转接队列</label><input type="text" style="width:130px" value="'+esc(n.queue||'MANUAL')+'" oninput="flow.nodes['+i+'].queue=this.value"></div>';
+  }
+  return h+'</div>';
+}
+function chType(i,t){
+  var n=flow.nodes[i]; n.type=t;
+  if(t==='menu'&&!n.branches) n.branches={'1':flow.nodes[0].id};
+  if(t==='question'&&!n.options) n.options={'1':'选项一','2':'选项二'};
+  if(t==='question'&&!n.tag) n.tag='Q'+(i+1);
+  if(t==='transfer'&&!n.queue) n.queue='MANUAL';
+  renderDesigner();
+}
+function addNode(){
+  var base='node', k=flow.nodes.length+1;
+  while(flow.nodes.some(function(n){return n.id===base+k;})) k++;
+  flow.nodes.push({id:base+k,type:'play',text:'新节点播报文本',next:flow.entry});
+  renderDesigner();
+}
+function delNode(i){
+  var id=flow.nodes[i].id;
+  flow.nodes.splice(i,1);
+  flow.nodes.forEach(function(n){
+    if(n.next===id) n.next='';
+    if(n.branches) Object.keys(n.branches).forEach(function(k){ if(n.branches[k]===id) n.branches[k]=flow.entry; });
+  });
+  renderDesigner();
+}
+function addKv(i,f){ flow.nodes[i][f]=flow.nodes[i][f]||{}; flow.nodes[i][f]['#']=flow.nodes[i].next||flow.entry; renderDesigner(); }
+function rmKv(i,f,k){ delete flow.nodes[i][f][k]; renderDesigner(); }
+function keyKv(i,f,j,v){ var o=flow.nodes[i][f], ks=Object.keys(o), old=ks[j], nv=v||' '; var arr={}; ks.forEach(function(k,x){ arr[x===j?nv:k]=o[k]; }); flow.nodes[i][f]=arr; renderDesignerFocus(i,f,nv); }
+function valKv(i,f,j,v){ var o=flow.nodes[i][f], ks=Object.keys(o); if(f==='branches'){ o[ks[j]]=v; renderDesigner(); } else { o[ks[j]]=v; } }
+function renderDesignerFocus(i,f,k){ renderDesigner(); }
+/* KV 键名编辑简化：整行重渲染可接受（短输入） */
+
+/* ── 话机模拟 ── */
+function lcdShow(node, meta){
+  var lcd=$id('lcd'); lcd.className='lcd';
+  $id('lcdMeta').textContent=meta||'';
+  if(node) $id('lcdText').innerHTML='<b>['+TYPEn[node.type]||node.type+']</b> '+esc(node.text);
+  $id('vmrow').style.display = node&&node.type==='voicemail' ? 'flex':'none';
+}
+function lcdErr(msg){ var lcd=$id('lcd'); lcd.className='lcd err'; $id('lcdText').innerHTML='<b>✕</b> '+esc(msg); }
+function renderChips(answers){
+  var h='';
+  Object.keys(answers||{}).forEach(function(k){ h+='<span class="anschip">'+esc(k)+' = '+esc(answers[k])+'</span>'; });
+  $id('ansChips').innerHTML=h;
+}
+function renderTranscript(tr){
+  var h='';
+  tr.forEach(function(s){
+    if(s.type==='INVALID') h+='<div class="step inv">✕ '+esc(s.text)+'</div>';
+    else if(s.event) h+='<div class="step">▶ <span class="nn">'+esc(s.node)+'</span> '+esc(s.text)+' <b>('+esc(s.event)+')</b></div>';
+    else h+='<div class="step">▶ <span class="nn">'+esc(s.node)+'</span> ['+esc(TYPEn[s.type]||s.type)+'] '+esc(s.text)+'</div>';
+  });
+  $id('transcript').innerHTML=h||'<div class="empty">通话轨迹将在此逐条显示</div>';
+  var b=$id('transcript'); b.scrollTop=b.scrollHeight;
+}
+async function newCall(){
+  var r=await api('/api/ivr/call',{method:'POST',body:{}});
+  if(!r.success){ toast('呼入失败：'+esc(r.message),'err'); return; }
+  sid=r.data.sessionId;
+  $id('btnHang').disabled=false;
+  renderTranscript(r.data.transcript); renderChips(r.data.answers);
+  lcdShow(r.data.node, '主叫 '+r.data.callerNo);
+  log('呼入接入：主叫 '+r.data.callerNo+' → 节点 '+r.data.node.id,'sys');
+  if(r.data.done) finish(r.data);
+}
+async function press(k){
+  if(!sid){ lcdErr('请先按【📞 模拟呼入】'); return; }
+  var r=await api('/api/ivr/call/'+sid+'/input',{method:'POST',body:{key:k}});
+  if(!r.success){ lcdErr(r.message); return; }
+  renderTranscript(r.data.transcript); renderChips(r.data.answers);
+  if(r.data.invalidKey){ lcdErr('按键 '+k+' 无效，已重播'); return; }
+  lcdShow(r.data.node, '已按 '+k);
+  log('按键 '+k+' → 节点 '+r.data.node.id,'warn');
+  if(r.data.done) finish(r.data);
+}
+async function sendVm(){
+  var txt=$id('vmText').value.trim()||'(语音留言)';
+  var r=await api('/api/ivr/call/'+sid+'/input',{method:'POST',body:{key:'#',message:txt}});
+  if(!r.success){ lcdErr(r.message); return; }
+  $id('vmText').value='';
+  renderTranscript(r.data.transcript); renderChips(r.data.answers);
+  lcdShow(r.data.node,'留言已录制');
+  log('留言提交：'+txt,'ok');
+  if(r.data.done) finish(r.data);
+}
+async function hangup(){
+  if(!sid) return;
+  var r=await api('/api/ivr/call/'+sid+'/hangup',{method:'POST',body:{}});
+  if(!r.success){ toast('挂断失败：'+esc(r.message),'err'); return; }
+  finish(r.data);
+}
+function finish(d){
+  $id('btnHang').disabled=true;
+  var oc=OCn[d.outcome]||d.outcome||'-';
+  lcdShow({type:'end',text:'通话结束 · 结局：'+oc},'—');
+  renderChips(d.answers);
+  log('通话结束：'+oc+'（答案 '+JSON.stringify(d.answers)+'）','ok');
+  toast('通话结束：'+oc,'ok');
+  sid=null;
+  loadLogs();
+}
+async function loadLogs(){
+  if(!token) return;
+  var r=await api('/api/ivr/logs?limit=20');
+  if(!r.success) return;
+  var tb=$id('logsBody');
+  if(!r.data.length){ tb.innerHTML='<tr><td colspan="6" class="empty">暂无来电</td></tr>'; return; }
+  tb.innerHTML=r.data.map(function(l){
+    var path=JSON.parse(l.path_json||'[]').join(' → ');
+    var ans=Object.keys(JSON.parse(l.answers_json||'{}')).map(function(k){ return k+'='+JSON.parse(l.answers_json)[k]; }).join('，')||'—';
+    var oc=(l.outcome||'').split(':')[0];
+    return '<tr><td>#'+l.id+'</td><td>'+esc(l.caller_no)+'</td><td class="oc oc-'+esc(oc)+'">'+esc(OCn[l.outcome]||l.outcome)+'</td>'+
+      '<td style="font-family:Consolas,monospace;font-size:11px">'+esc(path)+'</td><td>'+esc(ans)+'</td>'+
+      '<td>'+esc((l.start_time||'').replace('T',' ').slice(5,19))+'</td></tr>';
+  }).join('');
+}
+
+/* ── 重置 ── */
+async function openReset(){
+  var pwd=prompt('输入 admin 密码以重置演示数据（流程也将还原为种子）','123456');
+  if(pwd===null) return;
+  try{
+    var lr=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({loginName:'admin',password:pwd})}).then(function(r){return r.json();});
+    if(!lr.success){ toast('重置失败：'+esc(lr.message),'err'); return; }
+    var rr=await fetch('/api/sys/reset',{method:'POST',headers:{'Authorization':'Bearer '+lr.data.sessionId}}).then(function(r){return r.json();});
+    if(!rr.success){ toast('重置失败：'+esc(rr.message),'err'); return; }
+    toast('演示数据已重置','ok'); log('系统重置','sys');
+    setTimeout(function(){ location.reload(); },1200);
+  }catch(e){ toast('网络异常','err'); }
+}
+
+log('=== IVR 流程设计器 Live 版已加载 ===');
+log('左侧编辑流程（保存即生效）· 右侧话机真实按键走线','sys');
+</script>
+</body>
+</html>

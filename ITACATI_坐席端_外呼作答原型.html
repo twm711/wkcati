@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>坐席工作台 · 外呼作答交互原型 · ITACATI 电访专家风格</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 1080px; }
+
+  /* ── 顶栏 ─────────────────────────────── */
+  .topbar { background: #173a5e; color: #fff; flex: 0 0 auto; }
+  .topbar .row1 { display: flex; align-items: center; gap: 16px; padding: 8px 14px; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .spacer { flex: 1; }
+  .agent-chip { background: rgba(255,255,255,.12); border-radius: 14px; padding: 3px 12px; font-size: 12px; }
+  .state-badge { padding: 3px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+  .st-LOGOUT  { background: #7a8ba0; }
+  .st-READY   { background: #27863c; }
+  .st-AUX     { background: #b9770e; }
+  .st-DIALING, .st-RINGING { background: #6c3fc5; }
+  .st-TALKING { background: #c0392b; }
+  .st-ACW     { background: #2e6da4; }
+  .calltimer { font-family: Consolas, monospace; font-size: 16px; background: rgba(255,255,255,.12); padding: 2px 10px; border-radius: 4px; }
+
+  /* ── 软电话条 ─────────────────────────────── */
+  .softbar { display: flex; align-items: center; gap: 8px; padding: 7px 14px; background: #1f4f7a; flex-wrap: wrap; }
+  .sbtn { border: 1px solid rgba(255,255,255,.45); background: transparent; color: #fff; border-radius: 4px;
+          padding: 5px 14px; cursor: pointer; font-size: 13px; }
+  .sbtn:hover:not(:disabled) { background: rgba(255,255,255,.15); }
+  .sbtn:disabled { opacity: .35; cursor: not-allowed; }
+  .sbtn.warn { border-color: #f0b27a; color: #f8d0a4; }
+  .sbtn.danger { border-color: #e89a9a; color: #f3c1c1; }
+  .mode { display: flex; align-items: center; gap: 6px; color: #cfe2f3; font-size: 12px; margin-left: 8px; }
+  .mode select { background: rgba(255,255,255,.12); color: #fff; border: 1px solid rgba(255,255,255,.35); border-radius: 3px; padding: 3px 6px; }
+  .mode select option { color: #333; }
+
+  /* ── 主体三栏 ─────────────────────────────── */
+  .main { flex: 1; display: flex; min-height: 0; }
+  .col-left  { flex: 0 0 260px; background: #fff; border-right: 1px solid #dfe4ea; overflow-y: auto; }
+  .col-mid   { flex: 1; background: #f2f5f9; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; }
+  .col-right { flex: 0 0 300px; background: #fff; border-left: 1px solid #dfe4ea; overflow-y: auto; }
+
+  .panel-h { padding: 9px 12px; font-weight: bold; color: #173a5e; background: #eef3f9; border-bottom: 1px solid #dfe4ea;
+             display: flex; align-items: center; gap: 8px; position: sticky; top: 0; z-index: 2; }
+  .panel-h .tag { font-weight: normal; font-size: 11px; color: #7d8ca0; }
+  .pad { padding: 12px; }
+
+  /* 左栏样本 */
+  .kv { display: flex; margin-bottom: 6px; font-size: 12.5px; }
+  .kv .k { flex: 0 0 76px; color: #7d8ca0; }
+  .kv .v { flex: 1; }
+  .phone-row { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border: 1px solid #e3e8ee; border-radius: 4px; margin-bottom: 6px; font-size: 12.5px; }
+  .phone-row .no { font-family: Consolas, monospace; flex: 1; }
+  .phone-row .main-tag { background: #eaf7ed; color: #27863c; font-size: 11px; padding: 0 6px; border-radius: 3px; }
+  .phone-row .bad { background: #fdeaea; color: #c0392b; font-size: 11px; padding: 0 6px; border-radius: 3px; }
+  .hist-item { font-size: 12px; color: #667; padding: 4px 0; border-bottom: 1px dashed #eef1f5; }
+  .hist-item b { color: #444; }
+  .sec-ttl { font-size: 12px; color: #4a6a94; font-weight: bold; margin: 14px 0 6px; }
+
+  /* 中栏问卷 */
+  .q-progress { height: 8px; background: #dfe8f2; border-radius: 4px; overflow: hidden; margin-bottom: 14px; }
+  .q-progress i { display: block; height: 100%; background: #2e6da4; width: 0; transition: width .25s; }
+  .q-card { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; padding: 20px 22px; flex: 0 0 auto; }
+  .q-no { color: #4a6a94; font-size: 12px; margin-bottom: 6px; display: flex; gap: 10px; align-items: center; }
+  .q-no .req { color: #c0392b; font-weight: bold; }
+  .q-title { font-size: 17px; line-height: 1.6; margin-bottom: 16px; }
+  .q-opts label { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #dfe4ea; border-radius: 5px;
+                  margin-bottom: 8px; cursor: pointer; background: #fbfcfe; font-size: 14px; }
+  .q-opts label:hover { border-color: #2e6da4; background: #eef5fc; }
+  .q-opts input[type=text], .q-opts input[type=number], .q-opts textarea, .q-opts input[type=date] {
+      width: 100%; border: 1px solid #d0d7de; border-radius: 4px; padding: 8px 10px; font-size: 14px; font-family: inherit; }
+  .q-scale { display: flex; flex-wrap: wrap; gap: 8px; }
+  .q-scale label { flex: 0 0 52px; justify-content: center; padding: 8px 0; margin: 0; }
+  .q-matrix { border-collapse: collapse; width: 100%; margin-bottom: 8px; background: #fff; }
+  .q-matrix th, .q-matrix td { border: 1px solid #dfe4ea; padding: 8px 10px; font-size: 13px; text-align: center; }
+  .q-matrix th { background: #f2f6fb; }
+  .q-matrix td:first-child { text-align: left; }
+  .q-note { color: #c0392b; font-size: 13px; min-height: 20px; margin-top: 8px; }
+  .q-tip { color: #98a4b3; font-size: 12px; margin-top: 10px; }
+  .q-info-box { background: #f6f0ff; border: 1px solid #e2d6f7; border-radius: 5px; padding: 14px; line-height: 1.9; font-size: 14px; }
+  .q-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .abtn { border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 4px; padding: 8px 22px; cursor: pointer; font-size: 14px; }
+  .abtn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .abtn.primary:hover { background: #25598a; }
+  .abtn:disabled { opacity: .4; cursor: not-allowed; }
+  .empty-mid { text-align: center; color: #98a4b3; padding: 80px 30px; line-height: 2.2; }
+  .empty-mid .big { font-size: 42px; }
+
+  /* 右栏 */
+  .res-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px 12px; }
+  .rc { border: 1px solid #d0d7de; background: #fff; border-radius: 4px; padding: 7px 4px; cursor: pointer; font-size: 12px; text-align: center; }
+  .rc:hover:not(:disabled) { border-color: #2e6da4; color: #2e6da4; }
+  .rc:disabled { opacity: .35; cursor: not-allowed; }
+  .rc.good { border-color: #bfdcc7; color: #27863c; font-weight: bold; }
+  .rc.appt { border-color: #d8c9ec; color: #6c3fc5; }
+  .logbox { font-size: 11.5px; font-family: Consolas, "Courier New", monospace; color: #556; padding: 8px 12px; line-height: 1.8; }
+  .logbox .t { color: #9aa7b6; margin-right: 6px; }
+  .logbox .ok { color: #27863c; } .logbox .warn { color: #b9770e; } .logbox .err { color: #c0392b; } .logbox .sys { color: #6c3fc5; }
+  .simbar { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px dashed #e3e8ee; flex-wrap: wrap; }
+  .simbar .sbtn { border-color: #c9d4e0; color: #4a6a94; font-size: 11.5px; padding: 3px 8px; }
+
+  /* 状态栏 */
+  .statusbar { flex: 0 0 28px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center;
+               gap: 22px; padding: 0 14px; color: #667; font-size: 12px; }
+
+  /* Toast / 弹窗 */
+  .toast { position: fixed; top: 74px; right: 18px; z-index: 60; background: #173a5e; color: #fff; padding: 10px 16px;
+           border-radius: 6px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.25); display: none; max-width: 320px; }
+  .toast.listen { background: #6c3fc5; }
+  .toast.force { background: #b9770e; }
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.45); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 420px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .modal .mhead { padding: 12px 16px; border-bottom: 1px solid #eef1f5; font-weight: bold; color: #173a5e; }
+  .modal .mbody { padding: 14px 16px; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; }
+  .modal input, .modal select { width: 100%; border: 1px solid #d0d7de; border-radius: 4px; padding: 7px 9px; font-size: 13px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="row1">
+      <div class="logo">坐席工作台 <small>ITACATI · 外呼作答交互原型</small></div>
+      <div class="agent-chip" id="agentChip">未签入</div>
+      <div class="spacer"></div>
+      <div class="calltimer" id="callTimer">00:00:00</div>
+      <div class="state-badge st-LOGOUT" id="stateBadge">未签入</div>
+    </div>
+    <div class="softbar">
+      <button class="sbtn" id="btnLogin" onclick="login()">签 入</button>
+      <button class="sbtn" id="btnLogout" onclick="logout()" disabled>签 出</button>
+      <button class="sbtn warn" id="btnAux" onclick="setAux()" disabled>示 忙</button>
+      <button class="sbtn" id="btnReady" onclick="setReady()" disabled>示 闲</button>
+      <button class="sbtn" id="btnHold" onclick="toggleHold()" disabled>保 持</button>
+      <button class="sbtn danger" id="btnHangup" onclick="hangupByAgent()" disabled>挂 断</button>
+      <div class="mode">
+        呼出模式：
+        <select id="callMode">
+          <option value="PREVIEW">预览呼出（看样本后手动呼叫）</option>
+          <option value="AUTO">自动呼出（系统派样自动拨）</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <!-- 左栏：样本信息 -->
+    <div class="col-left">
+      <div class="panel-h">样本信息 <span class="tag" id="sidTag"></span></div>
+      <div class="pad" id="samplePanel"><div class="q-tip" style="padding:20px 4px">签入后由系统派样。<br>派样即锁定样本（防止双坐席同拨），<br>断线超时自动回收回池。</div></div>
+    </div>
+
+    <!-- 中栏：问卷区 -->
+    <div class="col-mid" id="midCol">
+      <div class="empty-mid">
+        <div class="big">☎</div>
+        签入 → 示闲 → 系统派样 → 呼叫<br>
+        接通后问卷自动弹出，逐题作答（自动跳题 + 校验）<br>
+        挂机后选择"电话结束状态码"提交，进入后处理
+      </div>
+    </div>
+
+    <!-- 右栏：结果码 / 日志 / 模拟事件 -->
+    <div class="col-right">
+      <div class="panel-h">电话结束状态码 <span class="tag">挂机后提交</span></div>
+      <div class="res-grid">
+        <button class="rc good"  id="rc-SUCCESS"  onclick="submitResult('SUCCESS')" disabled>访问成功</button>
+        <button class="rc"       id="rc-PARTIAL"  onclick="submitResult('PARTIAL')" disabled>部分完成</button>
+        <button class="rc"       id="rc-QUFAIL"   onclick="submitResult('QUFAIL')" disabled>甄别不合格</button>
+        <button class="rc"       id="rc-REFUSE"   onclick="submitResult('REFUSE')" disabled>拒 访</button>
+        <button class="rc"       id="rc-BREAKOFF" onclick="submitResult('BREAKOFF')" disabled>中途挂断</button>
+        <button class="rc appt"  id="rc-APPOINT"  onclick="openAppt()" disabled>预约回拨</button>
+        <button class="rc"       id="rc-NA"       onclick="submitResult('NA')" disabled>无人接听</button>
+        <button class="rc"       id="rc-BUSY"     onclick="submitResult('BUSY')" disabled>占 线</button>
+        <button class="rc"       id="rc-INVALID"  onclick="submitResult('INVALID')" disabled>空 号</button>
+        <button class="rc"       id="rc-FAX"      onclick="submitResult('FAX')" disabled>传真/数据线</button>
+      </div>
+      <div class="panel-h">系统日志</div>
+      <div class="logbox" id="logbox"></div>
+      <div class="simbar">
+        <span class="q-tip" style="margin:0">模拟督导侧事件：</span>
+        <button class="sbtn" onclick="simMessage()">督导消息</button>
+        <button class="sbtn" onclick="simListen()">监听提示</button>
+        <button class="sbtn" onclick="simForceBusy()">强制示忙</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div class="statusbar">
+    <span>状态：<b id="sbState">未签入</b></span>
+    <span>今日呼叫：<b id="sbDial">0</b></span>
+    <span>成功：<b id="sbOk" style="color:#27863c">0</b></span>
+    <span>失败/重拨：<b id="sbFail" style="color:#b9770e">0</b></span>
+    <span>在线时长：<b id="sbOnline">00:00:00</b></span>
+    <span style="margin-left:auto">对应《功能细化与全链路深度分析》4.2.3/4.2.4 状态机与 4.3.2 预览呼出时序</span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* =========================================================
+ * 坐席端外呼作答交互原型
+ * 状态机（对应分析文档 4.2.4）：
+ *   LOGOUT → READY ⇄ AUX；READY → DIALING → RINGING → TALKING → ACW → READY
+ * 样本状态机（4.2.3）：IDLE→ASSIGNED→INCALL→ 按结果码闭环/回池/预约/黑名单
+ * ========================================================= */
+
+/* ── 电话结束状态码（与数据库 smp_status_code 初始化一致） ── */
+var RESULT_CODES = {
+  SUCCESS:  { name: '访问成功',   closed: true,  redial: false, black: false },
+  PARTIAL:  { name: '部分完成',   closed: true,  redial: true,  black: false },
+  QUFAIL:   { name: '甄别不合格', closed: true,  redial: false, black: false },
+  REFUSE:   { name: '拒访',       closed: true,  redial: false, black: true  },
+  BREAKOFF: { name: '中途挂断',   closed: true,  redial: true,  black: false },
+  APPOINT:  { name: '预约回拨',   closed: false, redial: false, black: false },
+  NA:       { name: '无人接听',   closed: false, redial: true,  black: false },
+  BUSY:     { name: '占线',       closed: false, redial: true,  black: false },
+  INVALID:  { name: '空号',       closed: true,  redial: false, black: true  },
+  FAX:      { name: '传真/数据线', closed: true, redial: false, black: false }
+};
+var REDIAL_MAX = 3;
+
+/* ── 问卷（与问卷设计器原型的演示数据一致） ── */
+var QTYPES = {
+  single: '单选题', multi: '多选题', sort: '排序题', text: '开放题', number: '数字题',
+  date: '日期题', scale: '刻度题', matrix: '矩阵题', info: '说明题'
+};
+var QNR = [
+  { qid: 'q1', type: 'single', title: '【甄别】请问您或您的家人是否在市场研究行业工作？', required: true, options: [
+      { oid: 'o11', text: '否（继续访问）', jump: 'next' },
+      { oid: 'o12', text: '是（终止访问）', jump: 'end' } ] },
+  { qid: 'q2', type: 'single', title: '您的性别是？', required: true, options: [
+      { oid: 'o21', text: '男', jump: 'next' },
+      { oid: 'o22', text: '女', jump: 'next' } ] },
+  { qid: 'q3', type: 'scale', title: '总体而言，您对本服务的满意程度打几分？（0-10）', required: true, scaleMax: 10 },
+  { qid: 'q4', type: 'multi', title: '您使用过以下哪些服务渠道？（可多选）', required: true, options: [
+      { oid: 'o41', text: '服务热线', jump: 'next' },
+      { oid: 'o42', text: '营业厅', jump: 'next' },
+      { oid: 'o43', text: '微信公众号', jump: 'next' },
+      { oid: 'o44', text: 'APP', jump: 'next' } ] },
+  { qid: 'q5', type: 'single', title: '您是否愿意接受回访，进一步了解您的建议？', required: true, options: [
+      { oid: 'o51', text: '愿意（转预约登记）', jump: 'next' },
+      { oid: 'o52', text: '不愿意', jump: 'end' } ] },
+  { qid: 'q6', type: 'text', title: '您还有哪些意见或建议？', required: false, maxLen: 200 }
+];
+
+/* ── 样本池（演示） ── */
+var SAMPLES = [
+  { sid: 'S-1001', name: '张*明', gender: '男', region: '上海·徐汇', level: 'VIP',  memberYear: 8, plan: '畅享129',
+    phones: [ { no: '138****1234', valid: true }, { no: '021-6****567', valid: true } ],
+    history: [ { time: '2026-03-12', result: 'BUSY' }, { time: '2026-03-12', result: 'NA' } ] },
+  { sid: 'S-1002', name: '李*',   gender: '女', region: '上海·浦东', level: '普通', memberYear: 2, plan: '畅享89',
+    phones: [ { no: '150****8899', valid: true } ], history: [] },
+  { sid: 'S-1003', name: '王*强', gender: '男', region: '上海·闵行', level: '普通', memberYear: 1, plan: '无忧59',
+    phones: [ { no: '137****2233', valid: true }, { no: '139****4455', valid: false } ],
+    history: [ { time: '2026-01-08', result: 'INVALID' } ] },
+  { sid: 'S-1004', name: '赵*丽', gender: '女', region: '上海·静安', level: '普通', memberYear: 5, plan: '畅享129',
+    phones: [ { no: '186****6677', valid: true } ], history: [] },
+  { sid: 'S-1005', name: '陈*华', gender: '男', region: '上海·杨浦', level: '普通', memberYear: 3, plan: '无忧59',
+    phones: [ { no: '177****9900', valid: true } ], history: [ { time: '2026-06-30', result: 'REFUSE' } ] }
+];
+
+/* ── 运行时状态 ── */
+var st = {
+  state: 'LOGOUT',          // LOGOUT/READY/AUX/DIALING/RINGING/TALKING/ACW/HOLD(叠加)
+  sample: null,             // 当前样本
+  phoneIdx: 0,              // 当前呼叫的号码下标
+  qIdx: 0,                  // 当前题
+  answers: {},              // 答卷
+  hold: false,
+  dialCount: 0, okCount: 0, failCount: 0,
+  callSec: 0, onlineSec: 0,
+  timers: {},
+  autoNextTimer: null
+};
+var $id = function (x) { return document.getElementById(x); };
+
+/* ── 工具 ── */
+function now() { return new Date().toLocaleTimeString('zh-CN', { hour12: false }); }
+function fmt(sec) {
+  var h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  var p = function (n) { return (n < 10 ? '0' : '') + n; };
+  return p(h) + ':' + p(m) + ':' + p(s);
+}
+function log(msg, cls) {
+  var box = $id('logbox');
+  var div = document.createElement('div');
+  div.innerHTML = '<span class="t">' + now() + '</span><span class="' + (cls || '') + '">' + msg + '</span>';
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+function toast(msg, cls, ms) {
+  var t = $id('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (cls || '');
+  t.style.display = 'block';
+  clearTimeout(t._h);
+  t._h = setTimeout(function () { t.style.display = 'none'; }, ms || 3200);
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/* ── 状态机可视化 ── */
+var ST_TEXT = { LOGOUT: '未签入', READY: '就绪(示闲)', AUX: '示忙', DIALING: '外呼中', RINGING: '振铃', TALKING: '通话中', ACW: '后处理' };
+function setState(s) {
+  st.state = s;
+  $id('stateBadge').textContent = ST_TEXT[s] || s;
+  $id('stateBadge').className = 'state-badge st-' + s;
+  $id('sbState').textContent = ST_TEXT[s] + (st.hold && s === 'TALKING' ? ' · 已保持' : '');
+  updateButtons();
+}
+function updateButtons() {
+  var s = st.state;
+  $id('btnLogin').disabled  = s !== 'LOGOUT';
+  $id('btnLogout').disabled = s === 'LOGOUT';
+  $id('btnAux').disabled    = !(s === 'READY' || s === 'AUX');
+  $id('btnReady').disabled  = !(s === 'READY' || s === 'AUX');
+  $id('btnHold').disabled   = s !== 'TALKING';
+  $id('btnHangup').disabled = !(s === 'TALKING' || s === 'RINGING');
+  var canResult = (s === 'TALKING' || s === 'ACW');
+  Object.keys(RESULT_CODES).forEach(function (c) { $id('rc-' + c).disabled = !canResult; });
+}
+
+/* ── 计时器 ── */
+function startTimers() {
+  st.timers.online = setInterval(function () {
+    st.onlineSec += 1;
+    $id('sbOnline').textContent = fmt(st.onlineSec);
+  }, 1000);
+}
+function startCallTimer() {
+  stopCallTimer();
+  st.callSec = 0;
+  $id('callTimer').textContent = '00:00:00';
+  st.timers.call = setInterval(function () {
+    st.callSec += 1;
+    $id('callTimer').textContent = fmt(st.callSec);
+  }, 1000);
+}
+function stopCallTimer() { clearInterval(st.timers.call); st.timers.call = null; }
+
+/* ── 签入 / 状态 ── */
+function login() {
+  setState('READY');
+  $id('agentChip').textContent = '工号 1020 · 坐席演示 · 技能组：呼出一组';
+  startTimers();
+  log('软电话签入成功（NKZXAgent → 零配置服务器 /was）', 'ok');
+  log('签入：状态 LOGIN→READY，写 cti_agent_state_log', 'sys');
+  $id('midCol').innerHTML = '<div class="empty-mid"><div class="big">✅</div>已就绪，等待派样…<br>当前模式：' +
+    ($id('callMode').value === 'PREVIEW' ? '预览呼出' : '自动呼出') + '</div>';
+  nextSample();
+}
+function logout() {
+  if (st.state === 'TALKING' || st.state === 'RINGING') { alert('有进行中话务，不能签出'); return; }
+  clearInterval(st.timers.online);
+  setState('LOGOUT');
+  $id('agentChip').textContent = '未签入';
+  log('签出：状态 LOGOUT，写 cti_agent_state_log', 'sys');
+}
+function setAux() { setState('AUX'); log('示忙（AUX）：不参与派样与预测拨号统计'); }
+function setReady() { setState('READY'); log('示闲（READY）：进入派样队列', 'ok'); if (!st.sample) nextSample(); }
+function toggleHold() {
+  st.hold = !st.hold;
+  $id('btnHold').textContent = st.hold ? '取 回' : '保 持';
+  $id('sbState').textContent = ST_TEXT[st.state] + (st.hold ? ' · 已保持' : '');
+  log(st.hold ? '通话保持（CTI Proxy: HOLD）' : '取回通话');
+}
+
+/* ── 派样 ── */
+function pickSample() {
+  /* 派样过滤演示：黑名单/半年原则/重拨上限（完整 SQL 见建表脚本附录1） */
+  for (var i = 0; i < SAMPLES.length; i++) {
+    var s = SAMPLES[i];
+    if (s.blocked) continue;
+    if (s.attempts >= REDIAL_MAX) continue;
+    if (s.lastResult === 'REFUSE') continue;   /* 半年原则/拒访闭环演示 */
+    return s;
+  }
+  return null;
+}
+function nextSample() {
+  if (st.state !== 'READY' && st.state !== 'ACW') return;
+  var s = pickSample();
+  if (!s) {
+    $id('midCol').innerHTML = '<div class="empty-mid"><div class="big">📦</div>样本池已空（或全部命中过滤规则）<br>请联系督导补充样本</div>';
+    log('派样引擎：无可用样本（黑名单/半年原则/重拨上限过滤后为空）', 'warn');
+    return;
+  }
+  st.sample = s;
+  st.phoneIdx = 0;
+  st.qIdx = 0;
+  st.answers = {};
+  s.attempts = (s.attempts || 0);
+  log('派样：' + s.sid + ' → 本坐席（ASSIGNED，写 smp_assign_log）', 'sys');
+  renderSample();
+  renderIdleMid();
+  if ($id('callMode').value === 'AUTO') {
+    log('自动呼出模式：3 秒后系统自动拨号（预测拨号）');
+    clearTimeout(st.autoNextTimer);
+    st.autoNextTimer = setTimeout(dial, 3000);
+  }
+}
+function renderIdleMid() {
+  $id('midCol').innerHTML = '<div class="empty-mid"><div class="big">📞</div>样本 <b>' + esc(st.sample.sid) + '</b> 已派给本坐席<br>' +
+    ($id('callMode').value === 'PREVIEW'
+      ? '请核对左侧样本信息后点击【呼 叫】（预览呼出）'
+      : '系统将自动拨号（自动呼出）…') + '</div>';
+}
+
+/* ── 左栏渲染 ── */
+function renderSample() {
+  var s = st.sample;
+  $id('sidTag').textContent = s.sid + ' · ' + s.level;
+  var html = '<div class="kv"><div class="k">姓名</div><div class="v">' + esc(s.name) + '</div></div>' +
+    '<div class="kv"><div class="k">性别</div><div class="v">' + esc(s.gender) + '</div></div>' +
+    '<div class="kv"><div class="k">区域</div><div class="v">' + esc(s.region) + '</div></div>' +
+    '<div class="kv"><div class="k">会员年限</div><div class="v">' + esc(s.memberYear) + ' 年</div></div>' +
+    '<div class="kv"><div class="k">当前套餐</div><div class="v">' + esc(s.plan) + '</div></div>' +
+    '<div class="kv"><div class="k">已呼次数</div><div class="v">' + (s.attempts || 0) + ' / ' + REDIAL_MAX + '</div></div>' +
+    '<div class="sec-ttl">电话号码（一人多号，按序呼叫）</div>';
+  s.phones.forEach(function (p, i) {
+    html += '<div class="phone-row"><span>' + (i + 1) + '.</span><span class="no">' + esc(p.no) + '</span>' +
+      (i === 0 ? '<span class="main-tag">主</span>' : '') +
+      (p.valid ? '' : '<span class="bad">无效</span>') +
+      '<button class="sbtn" style="border-color:#c9d4e0;color:#4a6a94;padding:2px 8px;font-size:11px" ' +
+      'onclick="switchPhone(' + i + ')" ' + (st.state === 'READY' ? '' : 'disabled') + '>换号</button></div>';
+  });
+  html += '<div class="sec-ttl">历史接触记录</div>';
+  if (!s.history.length) html += '<div class="q-tip">首次接触</div>';
+  else s.history.forEach(function (h) {
+    html += '<div class="hist-item">' + esc(h.time) + ' · 结果 <b>' + esc(h.result) + '</b>（' + (RESULT_CODES[h.result] ? RESULT_CODES[h.result].name : '') + '）</div>';
+  });
+  html += '<div class="sec-ttl">操作</div>' +
+    '<button class="abtn primary" style="width:100%" id="btnDial" onclick="dial()" ' + (st.state === 'READY' ? '' : 'disabled') + '>☎ 呼 叫</button>' +
+    '<div class="q-tip" style="margin-top:8px">· 预览呼出：坐席确认后手动发起<br>· 自动呼出：系统按策略自动拨<br>· 半年原则：180 天内已访样本不派</div>';
+  $id('samplePanel').innerHTML = html;
+}
+function switchPhone(i) {
+  st.phoneIdx = i;
+  log('换号：改呼第 ' + (i + 1) + ' 个号码（一人多号排序规则）');
+}
+
+/* ── 呼叫模拟 ── */
+function dial() {
+  if (st.state !== 'READY') return;
+  clearTimeout(st.autoNextTimer);
+  var s = st.sample;
+  st.dialCount += 1;
+  $id('sbDial').textContent = st.dialCount;
+  setState('DIALING');
+  log('外呼 ' + s.phones[st.phoneIdx].no + '（CTI Proxy → 语音网关 originate）', 'sys');
+  setTimeout(function () {
+    if (st.state !== 'DIALING') return;
+    setState('RINGING');
+    log('振铃中…（ring_duration 计时）');
+    setTimeout(ringingOutcome, 2500 + Math.random() * 1500);
+  }, 1200);
+}
+function ringingOutcome() {
+  if (st.state !== 'RINGING') return;
+  var r = Math.random();
+  if (r < 0.12) { finishCall('NA'); return; }
+  if (r < 0.20) { finishCall('BUSY'); return; }
+  if (r < 0.24) { finishCall('INVALID'); return; }
+  if (r < 0.27) { finishCall('FAX'); return; }
+  connected();
+}
+function connected() {
+  setState('TALKING');
+  var s = st.sample;
+  s.attempts += 1;
+  startCallTimer();
+  log('接通！connect_time 落库；坐席状态 BUSY；样本 INCALL', 'ok');
+  log('开始录音（cti_recording 占位，recording_id 回写）', 'sys');
+  toast('呼叫已接通，问卷已弹出。请按屏幕逐题提问。');
+  st.qIdx = 0;
+  st.answers = {};
+  renderQuestion();
+}
+function hangupByAgent() {
+  if (st.state === 'RINGING') { finishCall('NA'); return; }
+  if (st.state !== 'TALKING') return;
+  log('坐席挂断（对方先挂亦同此事件）', 'warn');
+  toAcw();
+}
+function toAcw() {
+  stopCallTimer();
+  setState('ACW');
+  log('通话结束 talk_duration=' + st.callSec + 's；坐席进入后处理 ACW；请在右侧提交结果码', 'warn');
+  $id('midCol').innerHTML = '<div class="empty-mid"><div class="big">🧾</div>通话已结束（' + fmt(st.callSec) + '）<br>' +
+    '请在右侧选择<b>电话结束状态码</b>提交<br><span class="q-tip">结果码决定样本去向：闭环 / 回池重拨 / 预约 / 黑名单</span></div>';
+}
+
+/* ── 问卷渲染与作答 ── */
+function renderQuestion() {
+  var q = QNR[st.qIdx];
+  var html = '<div class="q-progress"><i style="width:' + Math.round(st.qIdx / QNR.length * 100) + '%"></i></div>' +
+    '<div class="q-card"><div class="q-no">第 ' + (st.qIdx + 1) + ' / ' + QNR.length + ' 题 · ' + QTYPES[q.type] +
+    (q.required ? ' <span class="req">*必答</span>' : '') +
+    '<span class="q-tip" style="margin-left:auto">通话计时 ' + fmt(st.callSec) + '</span></div>' +
+    '<div class="q-title">' + esc(q.title) + '</div><div class="q-opts" id="qBody">' + qBodyHtml(q) + '</div>' +
+    '<div class="q-note" id="qErr"></div>' +
+    '<div class="q-actions">' +
+    '<button class="abtn" onclick="prevQ()" ' + (st.qIdx === 0 ? 'disabled' : '') + '>← 上一题</button>' +
+    '<button class="abtn primary" onclick="nextQ()">下一题 →</button></div>' +
+    '<div class="q-tip">· 电脑自动控制提问：逻辑跳题/选项过滤/必答与范围校验（高质量特性）<br>· 每题作答实时提交入库（answered_at），断线可续答</div></div>';
+  $id('midCol').innerHTML = html;
+}
+function qBodyHtml(q) {
+  var html = '';
+  if (q.type === 'single') {
+    q.options.forEach(function (o, i) {
+      html += '<label><input type="radio" name="q" value="' + i + '"> ' + esc(o.text) + '</label>';
+    });
+  } else if (q.type === 'multi') {
+    q.options.forEach(function (o, i) {
+      html += '<label><input type="checkbox" class="qm" value="' + i + '"> ' + esc(o.text) + '</label>';
+    });
+  } else if (q.type === 'scale') {
+    html += '<div class="q-scale">';
+    for (var i = 0; i <= q.scaleMax; i++) {
+      html += '<label><input type="radio" name="q" value="' + i + '">' + i + '</label>';
+    }
+    html += '</div>';
+  } else if (q.type === 'text') {
+    html += '<textarea id="qText" maxlength="' + q.maxLen + '" placeholder="记录受访者原话（后续开放题编码）"></textarea>';
+  } else if (q.type === 'info') {
+    html += '<div class="q-info-box">' + esc(q.note || q.title) + '</div>';
+  }
+  return html;
+}
+function readAnswer(q) {
+  if (q.type === 'single' || q.type === 'scale') {
+    var r = document.querySelector('input[name=q]:checked');
+    return r ? r.value : null;
+  }
+  if (q.type === 'multi') {
+    var cs = document.querySelectorAll('.qm:checked');
+    return cs.length ? Array.prototype.map.call(cs, function (c) { return c.value; }) : null;
+  }
+  if (q.type === 'text') { var t = $id('qText').value; return t.trim() ? t : null; }
+  return null;
+}
+function nextQ() {
+  var q = QNR[st.qIdx];
+  var a = readAnswer(q);
+  if (q.required && a === null) { $id('qErr').textContent = '本题必答，请作答后再继续。'; return; }
+  if (a !== null) st.answers[q.qid] = a;
+  log('作答 Q' + (st.qIdx + 1) + (a === null ? '（跳过/未答）' : ' = ' + JSON.stringify(a)) + ' → 实时提交 ans_answer');
+  var jump = 'next';
+  if (q.type === 'single' && a !== null) {
+    var o = q.options[Number(a)];
+    if (o && o.jump) jump = o.jump;
+  }
+  var next;
+  if (jump === 'end') { endByScreenout(q); return; }
+  if (jump === 'next') next = st.qIdx + 1;
+  else {
+    for (var i = 0; i < QNR.length; i++) if (QNR[i].qid === jump) next = i;
+  }
+  if (next >= QNR.length) { qDone(); return; }
+  st.qIdx = next;
+  renderQuestion();
+}
+function prevQ() {
+  if (st.qIdx > 0) { st.qIdx -= 1; renderQuestion(); }
+}
+function endByScreenout(q) {
+  log('命中甄别/终止跳转（' + q.title.slice(0, 12) + '…）→ 问卷结束', 'warn');
+  qDone(true);
+}
+function qDone(screenout) {
+  $id('midCol').innerHTML = '<div class="empty-mid"><div class="big">📝</div>问卷作答完成<br>共作答 ' + Object.keys(st.answers).length + ' 题（答卷 SUBMITTED）<br>' +
+    '<span class="q-tip">' + (screenout ? '甄别终止：请提交结果码【甄别不合格 QUFAIL】' : '对方挂机或继续致谢语后，提交结果码【访问成功 SUCCESS】') + '</span></div>';
+  toAcw();
+  if (screenout) toast('甄别终止：问卷提前结束，请提交 QUFAIL', 'force');
+}
+
+/* ── 结果码提交（样本去向判定：4.2.3） ── */
+function submitResult(code) {
+  if (st.state !== 'TALKING' && st.state !== 'ACW') return;
+  var meta = RESULT_CODES[code];
+  var s = st.sample;
+  s.lastResult = code;
+  s.history.push({ time: new Date().toISOString().slice(0, 10), result: code });
+  if (meta.black) s.blocked = true;
+  st.failCount += (code === 'SUCCESS' ? 0 : 1);
+  st.okCount += (code === 'SUCCESS' ? 1 : 0);
+  $id('sbOk').textContent = st.okCount;
+  $id('sbFail').textContent = st.failCount;
+  var dest;
+  if (meta.black) dest = '加入黑名单（BANNED，终态）';
+  else if (code === 'SUCCESS') dest = 'SUCCESS，样本闭环（closed）';
+  else if (code === 'APPOINT') dest = 'APPOINT，进入预约回拨队列';
+  else if (!meta.closed) dest = '回池重拨队列（attempts=' + s.attempts + '/' + REDIAL_MAX + '）';
+  else dest = '闭环（' + code + '）';
+  log('结果码 ' + code + '（' + meta.name + '）提交 → cti_call_record.result_code；样本 → ' + dest, meta.black ? 'err' : 'ok');
+  toast('已提交：' + meta.name + '。样本' + dest);
+  setState('READY');
+  st.sample = null;
+  $id('samplePanel').innerHTML = '<div class="q-tip" style="padding:20px 4px">结果码已提交。<br>系统 3 秒后自动派下一样样…</div>';
+  $id('midCol').innerHTML = '<div class="empty-mid"><div class="big">🔄</div>后处理完成，准备下一样本…</div>';
+  st.autoNextTimer = setTimeout(function () { if (st.state === 'READY') nextSample(); }, 3000);
+}
+
+/* ── 预约 ── */
+function openAppt() {
+  if (st.state !== 'TALKING' && st.state !== 'ACW') return;
+  var def = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  $id('modalRoot').innerHTML = '<div class="mask" onclick="if(event.target===this)closeModal()"><div class="modal">' +
+    '<div class="mhead">预约回拨登记</div><div class="mbody">' +
+    '<label class="q-tip">回拨日期</label><input type="date" id="apptDate" value="' + def + '">' +
+    '<label class="q-tip">回拨时段</label><select id="apptSlot"><option>上午 09:00-12:00</option><option>下午 14:00-18:00</option><option>晚间 18:30-20:30</option></select>' +
+    '<label class="q-tip">备注</label><input id="apptNote" placeholder="如：受访人晚班，建议 19 点后">' +
+    '</div><div class="mfoot"><button class="abtn" onclick="closeModal()">取消</button>' +
+    '<button class="abtn primary" onclick="doAppt()">生成预约任务</button></div></div></div>';
+}
+function doAppt() {
+  var d = $id('apptDate').value, slot = $id('apptSlot').value, note = $id('apptNote').value;
+  closeModal();
+  log('预约任务生成：' + st.sample.sid + ' @ ' + d + ' ' + slot + (note ? '（' + note + '）' : '') + ' → ans_appointment', 'sys');
+  submitResult('APPOINT');
+}
+function closeModal() { $id('modalRoot').innerHTML = ''; }
+
+/* ── 督导侧模拟事件 ── */
+function simMessage() {
+  toast('📩 督导消息：请注意语速，第 3 题请完整读出选项。', '', 4200);
+  log('收到督导消息（消息中心 → 坐席 toast）', 'warn');
+}
+function simListen() {
+  toast('🎧 督导正在监听本次通话（LISTEN）', 'listen');
+  log('督导监听建立：CTI Proxy 下发 LISTEN，事件写 cti_monitor_event', 'sys');
+}
+function simForceBusy() {
+  if (st.state === 'LOGOUT' || st.state === 'TALKING') { toast('当前状态不可强制示忙', 'force'); return; }
+  setState('AUX');
+  toast('⚠ 督导已将您强制示忙（FORCE_BUSY）', 'force');
+  log('被强制示忙：写 cti_monitor_event(FORCEBUSY)', 'err');
+}
+
+/* ── 模式切换 ── */
+$id('callMode').onchange = function () {
+  log('呼出模式切换为：' + (this.value === 'PREVIEW' ? '预览呼出（PREVIEW）' : '自动呼出（AUTO，预测模拟）'));
+  if (st.state === 'READY' && st.sample) renderIdleMid();
+};
+
+/* ── 初始日志 ── */
+log('=== 坐席工作台原型已加载 ===');
+log('演示链路：签入→派样→呼叫→作答→结果码→样本去向', 'sys');
+log('样本池 ' + SAMPLES.length + ' 条（含黑名单/重拨/多号码演示数据）');
+updateButtons();
+</script>
+</body>
+</html>

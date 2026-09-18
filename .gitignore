@@ -1,0 +1,36 @@
+# ═══ 运行产物 / 数据库文件（一律不入库）═══
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.test
+*.log
+
+# ═══ Python（nk3c-demo / autotest）═══
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+
+# ═══ Go（nk3c-go）═══
+nk3c-go/nk3c-api
+nk3c-go/bin/
+
+# ═══ Node（nk3c-go/web）═══
+node_modules/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# ═══ 交付压缩包（由仓库内容打包生成，属产物）═══
+南康_ITACATI_NK3C_完整交付包.zip
+
+# ═══ IDE / 系统 ═══
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# ═══ 沙箱/工具目录 ═══
+.cache/
+.local/

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ITACATI / NK3C 开发蓝图 · 原型与文档中心</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; background: #0f1e2e; color: #e8eef4; min-height: 100vh; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 34px 26px 60px; }
+  header { text-align: center; margin-bottom: 8px; }
+  header h1 { font-size: 26px; letter-spacing: 2px; }
+  header h1 b { color: #6fc2ff; }
+  header .sub { color: #8fa5ba; font-size: 13px; margin-top: 8px; line-height: 1.8; }
+  .meta { display: flex; justify-content: center; gap: 14px; margin: 16px 0 26px; flex-wrap: wrap; }
+  .meta span { background: rgba(111,194,255,.1); border: 1px solid rgba(111,194,255,.25); color: #9fd0f5; font-size: 12px; border-radius: 14px; padding: 3px 14px; }
+  h2.sec { font-size: 15px; color: #6fc2ff; margin: 26px 0 12px; border-left: 4px solid #2e6da4; padding-left: 10px; letter-spacing: 1px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(262px, 1fr)); gap: 14px; }
+  .card { background: #16293c; border: 1px solid #24405c; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; transition: .15s; }
+  .card:hover { border-color: #6fc2ff; transform: translateY(-2px); }
+  .card .ico { font-size: 26px; }
+  .card b { font-size: 14.5px; margin: 8px 0 4px; color: #fff; }
+  .card small { color: #7fa0bd; font-size: 11px; letter-spacing: .5px; }
+  .card p { color: #a9bccd; font-size: 12.5px; line-height: 1.75; margin: 8px 0 12px; flex: 1; }
+  .card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .card .tags i { font-style: normal; font-size: 10.5px; color: #8fd3a8; background: rgba(60,180,110,.12); border: 1px solid rgba(60,180,110,.3); padding: 1px 8px; border-radius: 10px; }
+  .card .tags i.b { color: #ffd28a; background: rgba(230,126,34,.12); border-color: rgba(230,126,34,.35); }
+  .card .tags i.c { color: #c9a8f5; background: rgba(124,77,255,.12); border-color: rgba(124,77,255,.35); }
+  .card a.btn { text-align: center; background: #2e6da4; color: #fff; text-decoration: none; border-radius: 6px; padding: 7px 0; font-size: 12.5px; }
+  .card a.btn:hover { background: #3a80be; }
+  .card a.btn.gray { background: #33475c; }
+  .card a.btn.gray:hover { background: #405970; }
+  .flow { background: #16293c; border: 1px solid #24405c; border-radius: 10px; padding: 18px 22px; font-family: Consolas, "Courier New", monospace; font-size: 12.5px; color: #9fd0f5; line-height: 2.05; overflow-x: auto; white-space: pre; }
+  .flow b { color: #8fd3a8; }
+  .flow i { color: #ffd28a; font-style: normal; }
+  footer { text-align: center; color: #61798f; font-size: 11.5px; margin-top: 34px; line-height: 1.9; }
+  .note { background: rgba(230,126,34,.08); border: 1px solid rgba(230,126,34,.3); color: #e8b98a; font-size: 12px; border-radius: 8px; padding: 10px 14px; margin: 14px 0 4px; line-height: 1.8; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>南康科技 <b>ITACATI</b>（电访专家）/ <b>NK3C</b>（云联络专家）</h1>
+    <div class="sub">开发蓝图 · 原型与文档中心 —— 基于公开资料调研 + 行业标准重构的可开发全套交付物</div>
+    <div class="meta">
+      <span>📅 2026-09-17</span><span>📄 4 份文档</span><span>🖥 4 份交互原型</span><span>🗄 3 版数据库脚本 · 60 表</span><span>🧪 96 用例 + 自动化骨架</span><span>🔌 OpenAPI 接口规格</span><span>📝 Word 合并版</span><span>🧭 Go+React 实现规划</span><span>⚙ Go 骨架 M0+M1 已落地（nk3c-go · go build/test -race 全绿 · 9 链路）</span><span>🖥 React Web 骨架已落地（web · Antd5 五页 · tsc 全绿 · 代理链 E2E）</span><span>⚙ 可运行演示系统（31 用例 · 四控制台 · 回访闭环 · SPSS 导出 · 多项目/工单 · WS · IVR · 质检 · 录音回放）</span><span>📦 ZIP 交付包</span>
+    </div>
+  </header>
+
+  <div class="note">⚠ 使用提示：在应用内单独预览本页时，站内链接不可跳转（沙箱无相对路径网络）；将工作区全部文件<b>下载到同一目录</b>后双击打开本页，所有跳转与原型即可完整使用。</div>
+
+  <h2 class="sec">交互原型（可直接操作）</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="ico">📝</div><small>PROTOTYPE 01 · M04 问卷管理</small>
+      <b>问卷设计器</b>
+      <div class="tags"><i>9 类题型</i><i>逐选项跳转</i><i>死题检测</i><i>所见即所得预览</i><i>配额</i><i>打印</i></div>
+      <p>三栏布局：题型/题库面板 + 画布 + 属性面板。逻辑校验（含 BFS 不可达分析）、模拟坐席作答预览、JSON 导入导出、问卷打印。</p>
+      <a class="btn" href="ITACATI_问卷设计器_交互原型.html">打开原型 →</a>
+    </div>
+    <div class="card">
+      <div class="ico">☎</div><small>PROTOTYPE 02 · M07 执行管理</small>
+      <b>坐席工作台（外呼作答）</b>
+      <div class="tags">签入/派样<i class="b">预览/自动外呼</i><i class="b">问卷作答</i><i>结果码去向</i><i>预约回拨</i><i>督导事件</i></div>
+      <p>完整坐席状态机：签入→示闲→派样锁→外呼（随机接通/未接通）→弹屏作答→结果码提交→样本去向判定（闭环/回池/预约/黑名单）。</p>
+      <a class="btn" href="ITACATI_坐席端_外呼作答原型.html">打开原型 →</a>
+    </div>
+    <div class="card">
+      <div class="ico">🎧</div><small>PROTOTYPE 03 · M08 实时监控</small>
+      <b>督导监控墙</b>
+      <div class="tags"><i>坐席卡墙</i><i>监听/插话</i><i>四类强控</i><i>配额报警</i><i>话务仿真</i></div>
+      <p>12 坐席实时监控墙，内置话务仿真引擎（自动流转+KPI 跳动）。监听→插话→强制示忙/示闲/挂断/签出全程留痕日志。</p>
+      <a class="btn" href="ITACATI_督导端_监控墙原型.html">打开原型 →</a>
+    </div>
+    <div class="card">
+      <div class="ico">🌳</div><small>PROTOTYPE 04 · M14 IVR 管理</small>
+      <b>IVR 流程设计器</b>
+      <div class="tags"><i>7 类节点</i><i>任意级数分支</i><i>死环检测</i><i>来电模拟器</i></div>
+      <p>树状流程画布（BFS 渲染），按键菜单/查询接口/转人工/留言节点；内置"来电模拟器"像打电话一样走流程；发布强制校验。</p>
+      <a class="btn" href="ITACATI_IVR设计器_交互原型.html">打开原型 →</a>
+    </div>
+  </div>
+
+  <h2 class="sec">文档与规格</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="ico">📘</div><small>DOC 01 · 调研</small>
+      <b>主调研文档（17 章）</b>
+      <div class="tags"><i>公司/产品背景</i><i>双代架构</i><i>菜单树</i><i>S1~S13 公开出处</i></div>
+      <p>ITACATI 与 NK3C 两代产品全景：架构图、部署配置、15 大功能、管理端 15 模块菜单树、坐席端、业务流程、题型规格、开发规范、风险合规。</p>
+      <a class="btn gray" href="南康科技_ITACATI_NK3C_开发文档.md">查看 Markdown →</a>
+    </div>
+    <div class="card">
+      <div class="ico">📗</div><small>DOC 02 · 深化分析</small>
+      <b>功能细化与全链路分析</b>
+      <div class="tags"><i>80 功能点</i><i>菜单关联矩阵</i><i>6 大状态机</i><i>5 时序</i><i>数据轨迹</i></div>
+      <p>每个功能点的入口/角色/规则/落表；菜单×对象×动作矩阵；预测拨号算法、派样取号、配额原子扣减；一通电话 12 步数据轨迹。</p>
+      <a class="btn gray" href="ITACATI_功能细化与全链路深度分析.md">查看 Markdown →</a>
+    </div>
+    <div class="card">
+      <div class="ico">🔌</div><small>API SPEC · OpenAPI 3.0</small>
+      <b>接口规格文档</b>
+      <div class="tags"><i>ResultInfo 封装</i><i>ID 转 String</i><i>全小写路径</i><i>Shiro 鉴权</i></div>
+      <p>按 NK3C 公开工程规范设计的 REST API 全集：认证/组织/项目/问卷/样本/策略/坐席/监控/答卷/报表/导出/质检/工单/IVR。</p>
+      <a class="btn gray" href="ITACATI_NK3C_API接口规格.yaml">查看 OpenAPI YAML →</a>
+      <a class="btn" href="ITACATI_NK3C_API接口说明.md" style="margin-top:6px">查看接口说明 →</a>
+    </div>
+    <div class="card">
+      <div class="ico">🛠</div><small>DOC 04 · 运维交付</small>
+      <b>部署手册（生产环境）</b>
+      <div class="tags"><i>B/S/S 拓扑</i><i>硬件配置表【S1】</i><i>JVM 参数【S8】</i><i>Erlang 容量估算</i></div>
+      <p>生产拓扑图、官方两档硬件配置（&lt;32 席 / 100 席）、中间件与端口规划、并发/中继/录音存储容量模型、部署步骤与上线检查单、demo→生产差异对照。</p>
+      <a class="btn gray" href="南康_ITACATI_NK3C_部署手册.md">查看部署手册 →</a>
+    </div>
+    <div class="card">
+      <div class="ico">🧭</div><small>IMPL PLAN · Go + React 技术栈</small>
+      <b>实现文档（Go+React 版）</b>
+      <div class="tags"><i>Go 1.22 + gin + sqlx/goose</i><i>React 18 + Antd 5</i><i>SQLite/MySQL 双方言</i><i>diago 纯 Go SIP/媒体</i></div>
+      <p>换引擎不换契约：沿用 OpenAPI 规格/DDL/96 用例基线与 nk3c-demo 行为基准。含 diago 话务映射（桥接/DTMF/录音/转接/混音）、预测外呼 DialerLoop、四控制台 React 设计、里程碑 M0–M6（约 37 人日）与风险对策。</p>
+      <a class="btn gray" href="南康_ITACATI_NK3C_实现文档_GoReact版.md">查看 Go+React 实现文档 →</a>
+      <div style="margin-top:10px;color:#0a7d43;font-weight:600">✅ 进度：后端骨架 nk3c-go/ 已可运行 —— gin+ResultInfo+RBAC、18 表迁移、六大业务域（auth/project/agent/monitor/workorder/ivr）、9 条集成测试 go build / vet / test -race 全绿；话务域 diago（M2+）待接入。<div style="margin-top:6px">🖥 <b>前端 web/</b>：React 18 + Antd5 + Vite（登录/坐席工作台/监控墙+审核/项目管理/工单/IVR 模拟器五页），<code>pnpm dev</code> 即起（:5173 反代 ：8080）；生产构建需 ≥4GB 内存环境。</div></div>
+    </div>
+    <div class="card">
+      <div class="ico">📝</div><small>DOC 03 · 评审版</small>
+      <b>Word 合并版文档</b>
+      <div class="tags"><i>标题样式</i><i>表格渲染</i><i>打印评审</i></div>
+      <p>两份核心文档合并为单一 .docx（含交付物清单与标题导航），适合打印、批注与评审会分发。</p>
+      <a class="btn gray" href="南康科技_ITACATI_NK3C_开发文档_合并版.docx">下载 Word →</a>
+    </div>
+  </div>
+
+  <h2 class="sec">数据库与测试</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="ico">🗄</div><small>DATABASE · 60 表 / 3 方言</small>
+      <b>建表脚本</b>
+      <div class="tags"><i>MySQL 基准</i><i>Oracle 迁移</i><i>SQLServer 迁移</i><i>菜单/状态码初始化</i></div>
+      <p>13 业务域全量建表 + M01~M15 菜单资源树 + 四类权限码 + 13 个电话状态码 + 半年原则参数 + 3 个核心查询样例（派样/配额/频数）。</p>
+      <a class="btn gray" href="ITACATI_NK3C_数据库建表.sql">MySQL →</a>
+      <a class="btn gray" href="ITACATI_NK3C_数据库建表_Oracle版.sql" style="margin-top:6px">Oracle →</a>
+      <a class="btn gray" href="ITACATI_NK3C_数据库建表_SQLServer版.sql" style="margin-top:6px">SQL Server →</a>
+    </div>
+    <div class="card">
+      <div class="ico">🧪</div><small>TEST · 96 用例 / 三层自动化</small>
+      <b>测试用例集与骨架</b>
+      <div class="tags"><i>P0×41 冒烟</i><i>并发一致性</i><i>E2E 数据轨迹</i><i>22 条逻辑用例已通过</i></div>
+      <p>Excel 三表（概览/明细/P0 清单）+ autotest/ 三层：纯逻辑（pytest 即跑）、Playwright UI 冒烟、MySQL 并发（SKIP LOCKED/配额）。</p>
+      <a class="btn gray" href="ITACATI_NK3C_测试用例集.xlsx">用例集 Excel →</a>
+      <a class="btn gray" href="autotest/README.md" style="margin-top:6px">自动化说明 →</a>
+    </div>
+  </div>
+
+  <h2 class="sec">可运行后端 Demo 与发行包</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="ico">⚙</div><small>LIVE DEMO · FastAPI + SQLite</small>
+      <b>演示系统（API + Live 坐席台 + Live 督导台）</b>
+      <div class="tags"><i>派样锁/过滤规则</i><i>配额原子扣减</i><i>结果码去向</i><i>幂等</i><i>10 集成用例全通过</i></div>
+      <p>蓝图全链路真实运行且<b>双控制台前后端贯通</b>：<br>· 服务预览打开 <b>/</b> → 控制台首页（三入口）<br>· <b>/agent</b> Live 坐席台：登录/派样/作答/结果码（实时显示样本去向与配额扣减）<br>· <b>/supervisor</b> Live 督导台：监控墙 <b>WebSocket 实时推送</b> / 话务流水 / 答卷审核 / <b>录音回放同步质检</b> / 导出中心 / <b>实时质检（监听·插话·强挂·强签 WS 下发坐席台）</b><br>· <b>/ivr</b> Live IVR 设计器：可视化编排呼入流程 + 话机模拟器按键真实走线（菜单/问卷/留言/转人工）<br>· <b>多项目并行</b>：种子双项目独立问卷/配额/样本；<b>/projects 项目管理台</b>（创建→发布→导样→修订 v1.x+1→暂停/结束）<br>· <b>工单流转+回访闭环</b>：转人工落单→归档→自动生成回访样本→外呼→审核（双链路关联）· <b>SPSS .sav 真实导出</b> · P0 覆盖矩阵（✅20/◐7/◻4/▢10）<br>· <b>/docs</b> Swagger UI · 一键重置 POST /api/sys/reset（admin / 123456）</p>
+      <a class="btn gray" href="nk3c-demo/README.md">查看说明 →</a>
+      <a class="btn gray" href="nk3c-demo/app.py" style="margin-top:6px">查看源码 →</a>
+    </div>
+    <div class="card">
+      <div class="ico">📦</div><small>RELEASE · 24 文件 / 286 KB</small>
+      <b>完整交付包（ZIP）</b>
+      <div class="tags"><i>4 文档</i><i>4 原型</i><i>3 版 SQL</i><i>OpenAPI</i><i>用例集</i><i>autotest</i><i>nk3c-demo</i></div>
+      <p>全部交付物打包：下载解压后双击 index.html 即可离线使用原型中心与全部跳转；nk3c-demo 解压后 pip install -r requirements.txt 即可运行。</p>
+      <a class="btn gray" href="南康_ITACATI_NK3C_完整交付包.zip">下载 ZIP →</a>
+    </div>
+  </div>
+
+  <h2 class="sec">全套蓝图链路</h2>
+  <div class="flow">
+  调研(公开资料 S1~S13)
+      │
+      ▼
+  <b>主文档</b> ──► <b>功能细化/菜单关联/全链路分析</b> ──► <i>每功能点 → 落表 → 菜单编号 M01~M15</i>
+      │                    │                                    │
+      ▼                    ▼                                    ▼
+  <b>四端交互原型</b>      <b>数据库 60 表(3 方言)</b>  ◄──落表对照──   │
+  设计器·坐席·督导·IVR        │                                   │
+      │                    ▼                                   ▼
+      └────► <i>Playwright UI 冒烟</i>   <b>测试用例集 96 条</b> ◄──验收清单──┘
+                             │
+                             ▼
+                  <i>pytest 逻辑层(✓22) / DB 并发层</i>
+                             │
+                             ▼
+                  <b>OpenAPI 接口规格</b> ──► <i>nk3c-demo 演示系统（✓31 用例 · 回访闭环 E2E · SPSS .sav · 四端 Live）</i> ──► 前后端并行开发 ──► 联调 ──► 交付
+  </div>
+
+  <footer>
+    资料来源：南康官网 · CTI 论坛厂商方案 · 高校实验室 · 厂商前员工技术博客（公开渠道，详见主文档第 17 章）<br>
+    【推定】标注内容为行业标准重构，供开发蓝本使用 · 请勿使用"南康/ITACATI/NK3C"商标对外 · 2026-09-17
+  </footer>
+</div>
+</body>
+</html>

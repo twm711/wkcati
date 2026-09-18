@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>督导监控墙 · 实时监控交互原型 · ITACATI/NK3C 风格</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif; font-size: 13px; color: #333; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-width: 1180px; }
+
+  /* 顶栏 */
+  .topbar { background: #14324f; color: #fff; padding: 8px 14px; display: flex; align-items: center; gap: 16px; flex: 0 0 auto; }
+  .logo { font-size: 15px; font-weight: bold; letter-spacing: 1px; }
+  .logo small { font-weight: normal; opacity: .7; margin-left: 6px; }
+  .proj { background: rgba(255,255,255,.1); border-radius: 4px; padding: 4px 12px; font-size: 12.5px; }
+  .proj b { color: #ffd28a; }
+  .clock { font-family: Consolas, monospace; font-size: 15px; background: rgba(255,255,255,.12); padding: 2px 10px; border-radius: 4px; }
+  .spacer { flex: 1; }
+  .sup-chip { font-size: 12px; background: rgba(255,255,255,.12); border-radius: 14px; padding: 3px 12px; }
+
+  /* 汇总条 */
+  .sumbar { display: flex; gap: 10px; padding: 8px 14px; background: #f7f9fc; border-bottom: 1px solid #dfe4ea; flex: 0 0 auto; flex-wrap: wrap; }
+  .sum { background: #fff; border: 1px solid #dfe4ea; border-radius: 5px; padding: 6px 14px; min-width: 104px; }
+  .sum .n { font-size: 20px; font-weight: bold; color: #14324f; font-family: Consolas, monospace; }
+  .sum .t { font-size: 11px; color: #7d8ca0; }
+  .sum.warn .n { color: #b9770e; }
+
+  /* 主体 */
+  .main { flex: 1; display: flex; min-height: 0; }
+  .wall-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .wall-tools { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: #fff; border-bottom: 1px solid #dfe4ea; flex: 0 0 auto; }
+  .wall-tools select, .wall-tools input { border: 1px solid #d0d7de; border-radius: 4px; padding: 4px 8px; font-size: 12.5px; }
+  .legend { margin-left: auto; font-size: 11.5px; color: #667; display: flex; gap: 12px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+  .wall { flex: 1; overflow-y: auto; padding: 14px; display: grid; grid-template-columns: repeat(auto-fill, minmax(252px, 1fr)); gap: 12px; align-content: start; background: #eef1f5; }
+
+  /* 坐席卡 */
+  .acard { background: #fff; border: 1px solid #dfe4ea; border-top: 4px solid #b8c4d4; border-radius: 6px; padding: 10px 12px 8px; position: relative; }
+  .acard.TALKING { border-top-color: #c0392b; }
+  .acard.READY   { border-top-color: #27863c; }
+  .acard.AUX     { border-top-color: #b9770e; }
+  .acard.DIALING,.acard.RINGING { border-top-color: #6c3fc5; }
+  .acard.ACW     { border-top-color: #2e6da4; }
+  .acard.LOGOUT  { opacity: .55; }
+  .acard.listened { box-shadow: 0 0 0 2px #6c3fc5; }
+  .a-head { display: flex; align-items: center; gap: 8px; }
+  .a-no { font-weight: bold; color: #14324f; }
+  .a-name { color: #667; font-size: 12px; }
+  .a-state { margin-left: auto; font-size: 11px; font-weight: bold; color: #fff; padding: 1px 8px; border-radius: 9px; background: #7a8ba0; }
+  .a-state.TALKING{background:#c0392b} .a-state.READY{background:#27863c} .a-state.AUX{background:#b9770e}
+  .a-state.DIALING,.a-state.RINGING{background:#6c3fc5} .a-state.ACW{background:#2e6da4}
+  .a-line { display: flex; justify-content: space-between; font-size: 12px; color: #556; margin-top: 6px; }
+  .a-timer { font-family: Consolas, monospace; font-size: 15px; color: #c0392b; font-weight: bold; }
+  .a-sample { font-size: 12px; color: #4a6a94; margin-top: 3px; }
+  .a-flags { position: absolute; right: 10px; top: 34px; font-size: 14px; }
+  .a-ops { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+  .op { border: 1px solid #d0d7de; background: #fff; border-radius: 3px; font-size: 11px; padding: 2px 7px; cursor: pointer; color: #445; }
+  .op:hover:not(:disabled) { border-color: #2e6da4; color: #2e6da4; }
+  .op:disabled { opacity: .3; cursor: not-allowed; }
+  .op.listen:hover:not(:disabled) { border-color: #6c3fc5; color: #6c3fc5; }
+  .op.force:hover:not(:disabled) { border-color: #c0392b; color: #c0392b; }
+
+  /* 右栏 */
+  .right { flex: 0 0 330px; border-left: 1px solid #dfe4ea; background: #fff; display: flex; flex-direction: column; min-height: 0; }
+  .panel-h { padding: 9px 12px; font-weight: bold; color: #14324f; background: #eef3f9; border-bottom: 1px solid #dfe4ea; display: flex; align-items: center; gap: 8px; }
+  .panel-h .tag { font-weight: normal; font-size: 11px; color: #7d8ca0; }
+  .kpi { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 12px; }
+  .kpi .kv2 { border: 1px solid #eef1f5; border-radius: 5px; padding: 8px 10px; }
+  .kpi .kv2 .n { font-size: 17px; font-weight: bold; color: #14324f; font-family: Consolas, monospace; }
+  .kpi .kv2 .t { font-size: 11px; color: #7d8ca0; }
+  .quota { padding: 4px 12px 10px; }
+  .q-row { margin-bottom: 9px; }
+  .q-row .q-t { display: flex; justify-content: space-between; font-size: 12px; color: #445; margin-bottom: 3px; }
+  .q-row .q-t b { font-family: Consolas, monospace; }
+  .q-bar { height: 9px; background: #eef1f5; border-radius: 5px; overflow: hidden; }
+  .q-bar i { display: block; height: 100%; background: #2e6da4; border-radius: 5px; transition: width .5s; }
+  .q-bar i.hot { background: #e67e22; }
+  .q-bar i.full { background: #27863c; }
+  .alarms { flex: 0 0 auto; max-height: 200px; overflow-y: auto; }
+  .alm { display: flex; gap: 8px; padding: 7px 12px; border-bottom: 1px dashed #eef1f5; font-size: 12px; align-items: center; }
+  .alm .lv { font-weight: bold; }
+  .alm.high .lv { color: #c0392b; } .alm.mid .lv { color: #b9770e; } .alm.info .lv { color: #2e6da4; }
+  .alm .ack { margin-left: auto; }
+  .alm .ack button { border: 1px solid #d0d7de; background: #fff; border-radius: 3px; font-size: 11px; padding: 1px 7px; cursor: pointer; }
+  .elog { flex: 1; overflow-y: auto; font-family: Consolas, monospace; font-size: 11.5px; color: #556; padding: 8px 12px; line-height: 1.75; }
+  .elog .t { color: #9aa7b6; margin-right: 6px; }
+  .elog .ok{color:#27863c} .elog .warn{color:#b9770e} .elog .err{color:#c0392b} .elog .sys{color:#6c3fc5}
+  .statusbar { flex: 0 0 28px; background: #f7f9fc; border-top: 1px solid #dfe4ea; display: flex; align-items: center; gap: 22px; padding: 0 14px; color: #667; font-size: 12px; }
+
+  /* 弹窗/Toast */
+  .toast { position: fixed; top: 66px; right: 18px; z-index: 60; background: #14324f; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.25); display: none; max-width: 330px; }
+  .toast.listen { background: #6c3fc5; } .toast.force { background: #b9770e; }
+  .mask { position: fixed; inset: 0; background: rgba(15,30,50,.45); display: flex; align-items: center; justify-content: center; z-index: 50; }
+  .modal { background: #fff; border-radius: 6px; width: 400px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.25); }
+  .modal .mhead { padding: 12px 16px; border-bottom: 1px solid #eef1f5; font-weight: bold; color: #14324f; }
+  .modal .mbody { padding: 14px 16px; font-size: 13px; line-height: 1.7; }
+  .modal .mfoot { padding: 10px 16px; border-top: 1px solid #eef1f5; text-align: right; display: flex; gap: 8px; justify-content: flex-end; }
+  .btn { border: 1px solid #d0d7de; background: #fff; color: #333; border-radius: 4px; padding: 6px 16px; cursor: pointer; font-size: 13px; }
+  .btn.primary { background: #2e6da4; border-color: #2e6da4; color: #fff; }
+  .btn.barge { background: #6c3fc5; border-color: #6c3fc5; color: #fff; }
+  .btn.danger { color: #c0392b; border-color: #e0b4b4; }
+  .modal input, .modal select { width: 100%; border: 1px solid #d0d7de; border-radius: 4px; padding: 7px 9px; font-size: 13px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="logo">督导监控墙 <small>ITACATI / NK3C · 实时监控交互原型</small></div>
+    <div class="proj">项目 <b>P2026-001</b> 客户满意度调查_2026 · <span style="color:#9fe0a8">RUNNING</span></div>
+    <div class="spacer"></div>
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="sup-chip">督导 · 张督导（groupAdmin）</div>
+  </div>
+
+  <div class="sumbar" id="sumbar"></div>
+
+  <div class="main">
+    <div class="wall-wrap">
+      <div class="wall-tools">
+        <span>坐席筛选：</span>
+        <select id="fState" onchange="renderWall()">
+          <option value="">全部状态</option>
+          <option value="TALKING">通话中</option>
+          <option value="READY">就绪</option>
+          <option value="AUX">示忙</option>
+          <option value="ACW">后处理</option>
+          <option value="LOGOUT">已签出</option>
+        </select>
+        <select id="fGroup" onchange="renderWall()">
+          <option value="">全部技能组</option>
+          <option>呼出一组</option>
+          <option>粤语技能组</option>
+        </select>
+        <span class="legend">
+          <span><i class="dot" style="background:#c0392b"></i>通话</span>
+          <span><i class="dot" style="background:#27863c"></i>就绪</span>
+          <span><i class="dot" style="background:#b9770e"></i>示忙</span>
+          <span><i class="dot" style="background:#6c3fc5"></i>外呼/振铃</span>
+          <span><i class="dot" style="background:#2e6da4"></i>后处理</span>
+        </span>
+      </div>
+      <div class="wall" id="wall"></div>
+    </div>
+
+    <div class="right">
+      <div class="panel-h">项目执行监控 <span class="tag">实时</span></div>
+      <div class="kpi" id="kpi"></div>
+      <div class="panel-h">配额进度 <span class="tag">≥95% 报警</span></div>
+      <div class="quota" id="quotaBox"></div>
+      <div class="panel-h">报警提醒 <span class="tag" id="almCount"></span></div>
+      <div class="alarms" id="alarms"></div>
+      <div class="panel-h">监控事件日志 <span class="tag">cti_monitor_event</span></div>
+      <div class="elog" id="elog"></div>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span>监听中：<b id="sbListen" style="color:#6c3fc5">无</b></span>
+    <span>实时口径：内存态 T+1s</span>
+    <span style="margin-left:auto">对应《功能细化与全链路深度分析》4.3.4 监听/插话时序与 2.8 M08 功能点</span>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modalRoot"></div>
+
+<script>
+"use strict";
+/* =========================================================
+ * 督导监控墙交互原型
+ * 事件落表：cti_monitor_event（LISTEN/BARGE/FORCEBUSY/FORCEIDLE/FORCEHANGUP/FORCELOGOUT/MESSAGE）
+ * 坐席状态：LOGIN/READY/BUSY/ACW/AUX/LOGOUT（cti_agent_state_log）
+ * ========================================================= */
+
+var ST_TEXT = { LOGOUT:'已签出', READY:'就绪', AUX:'示忙', DIALING:'外呼中', RINGING:'振铃', TALKING:'通话中', ACW:'后处理' };
+
+var agents = [
+  { no:'1020', name:'陈一',  group:'呼出一组',   state:'TALKING', since: nowSec()-96,  proj:'P2026-001', sample:'S-1001', callSec:96  },
+  { no:'1021', name:'王二',  group:'呼出一组',   state:'TALKING', since: nowSec()-41,  proj:'P2026-001', sample:'S-1007', callSec:41  },
+  { no:'1022', name:'张三',  group:'呼出一组',   state:'READY',   since: nowSec()-310, proj:'-',         sample:'-'                    },
+  { no:'1023', name:'李四',  group:'呼出一组',   state:'AUX',     since: nowSec()-120, proj:'-',         sample:'-',   reason:'就餐'   },
+  { no:'1024', name:'赵五',  group:'粤语技能组', state:'ACW',     since: nowSec()-25,  proj:'P2026-001', sample:'S-1012'              },
+  { no:'1025', name:'刘六',  group:'粤语技能组', state:'READY',   since: nowSec()-95,  proj:'-',         sample:'-'                    },
+  { no:'1026', name:'周七',  group:'呼出一组',   state:'DIALING', since: nowSec()-4,   proj:'P2026-001', sample:'S-1015'              },
+  { no:'1027', name:'吴八',  group:'呼出一组',   state:'LOGOUT',  since: nowSec()-3600,proj:'-',         sample:'-'                    },
+  { no:'1028', name:'郑九',  group:'粤语技能组', state:'TALKING', since: nowSec()-210, proj:'P2026-001', sample:'S-1018', callSec:210 },
+  { no:'1029', name:'冯十',  group:'呼出一组',   state:'READY',   since: nowSec()-1600,proj:'-',         sample:'-',   idleLong:true  },
+  { no:'1030', name:'钱甲',  group:'呼出一组',   state:'READY',   since: nowSec()-2100,proj:'-',         sample:'-',   idleLong:true  },
+  { no:'1031', name:'孙乙',  group:'粤语技能组', state:'LOGOUT',  since: nowSec()-7200,proj:'-',         sample:'-'                    }
+];
+var proj = { dial: 861, connect: 543, success: 397, fail: 104, abandon: 8,
+  quotas: [
+    { name:'配额：男·总计',   target:500, done:236 },
+    { name:'配额：女·总计',   target:500, done:161 },
+    { name:'配额：男/18-30', target:150, done:143 },
+    { name:'配额：女/31-45', target:150, done:74  },
+    { name:'配额：粤语文员', target:100, done:95  }
+  ] };
+var alarms = [
+  { lv:'mid',  time:'14:02', text:'坐席 1029/1030 已 30 分钟以上无通话，建议辅导或调整' },
+  { lv:'high', time:'13:47', text:'配额【男/18-30】完成 143/150（95%），即将满格' },
+  { lv:'info', time:'13:20', text:'样本池剩余 1,204 条（预计可用 2.1 小时）' }
+];
+var listening = null;   // 正在监听的坐席工号
+
+function nowSec() { return Math.floor(Date.now() / 1000); }
+function fmt(sec) { var h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), s=sec%60; var p=function(n){return (n<10?'0':'')+n;}; return p(h)+':'+p(m)+':'+p(s); }
+function clockStr() { return new Date().toLocaleTimeString('zh-CN', { hour12:false }); }
+function $id(x) { return document.getElementById(x); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function aByNo(no) { for (var i=0;i<agents.length;i++) if (agents[i].no===no) return agents[i]; return null; }
+
+function toast(msg, cls, ms) {
+  var t = $id('toast');
+  t.textContent = msg; t.className = 'toast ' + (cls||''); t.style.display='block';
+  clearTimeout(t._h); t._h = setTimeout(function(){ t.style.display='none'; }, ms||3400);
+}
+function elog(msg, cls) {
+  var box = $id('elog');
+  var div = document.createElement('div');
+  div.innerHTML = '<span class="t">'+clockStr()+'</span><span class="'+(cls||'')+'">'+msg+'</span>';
+  box.appendChild(div); box.scrollTop = box.scrollHeight;
+}
+
+/* ── 汇总条 / KPI / 配额 / 报警 ── */
+function renderSummary() {
+  var c = { online:0, ready:0, talking:0, aux:0 };
+  agents.forEach(function(a){ if(a.state!=='LOGOUT') c.online++; if(a.state==='READY')c.ready++; if(a.state==='TALKING')c.talking++; if(a.state==='AUX')c.aux++; });
+  var rate = proj.dial ? Math.round(proj.connect/proj.dial*100) : 0;
+  var abRate = proj.connect ? (proj.abandon/(proj.connect+proj.abandon)*100) : 0;
+  $id('sumbar').innerHTML =
+    sum(c.online,'在线坐席')+sum(c.ready,'就绪')+sum(c.talking,'通话中')+sum(c.aux,'示忙')+
+    sum(proj.dial,'今日呼出')+sum(proj.connect,'接通')+sum(proj.success,'成功','ok')+
+    '<div class="sum'+(abRate>3?' warn':'')+'"><div class="n">'+abRate.toFixed(1)+'%</div><div class="t">呼损率（上限3%）</div></div>'+
+    '<div class="sum"><div class="n">'+rate+'%</div><div class="t">接通率</div></div>';
+  function sum(n,t,cls){ return '<div class="sum'+(cls?' '+cls:'')+'"><div class="n">'+n+'</div><div class="t">'+t+'</div></div>'; }
+  $id('kpi').innerHTML =
+    kpi(proj.success,'成功答卷')+kpi(proj.fail,'失败/重拨')+kpi(proj.abandon,'呼损')+kpi('387 min','累计通话');
+  function kpi(n,t){ return '<div class="kv2"><div class="n">'+n+'</div><div class="t">'+t+'</div></div>'; }
+}
+function renderQuota() {
+  var html = '';
+  proj.quotas.forEach(function(q) {
+    var pct = Math.round(q.done/q.target*100);
+    var cls = pct>=100 ? 'full' : (pct>=95 ? 'hot' : '');
+    html += '<div class="q-row"><div class="q-t"><span>'+esc(q.name)+'</span><b>'+q.done+' / '+q.target+'（'+pct+'%）</b></div>'+
+            '<div class="q-bar"><i class="'+cls+'" style="width:'+Math.min(100,pct)+'%"></i></div></div>';
+  });
+  $id('quotaBox').innerHTML = html;
+}
+function renderAlarms() {
+  var html = '';
+  alarms.forEach(function(a, i) {
+    html += '<div class="alm '+a.lv+'"><span class="lv">'+(a.lv==='high'?'●高':a.lv==='mid'?'▲中':'○提示')+'</span>'+
+            '<span>'+a.time+' '+esc(a.text)+'</span>'+
+            '<span class="ack"><button onclick="ackAlarm('+i+')">确认</button></span></div>';
+  });
+  $id('alarms').innerHTML = html || '<div class="alm info"><span>暂无未确认报警</span></div>';
+  $id('almCount').textContent = '未确认 ' + alarms.length;
+}
+function addAlarm(lv, text) {
+  alarms.unshift({ lv:lv, time:clockStr().slice(0,5), text:text });
+  renderAlarms();
+  elog('报警触发：'+text, lv==='high'?'err':'warn');
+}
+function ackAlarm(i) { alarms.splice(i,1); renderAlarms(); }
+function checkQuotaAlarms() {
+  proj.quotas.forEach(function(q) {
+    var pct = q.done/q.target*100;
+    if (pct>=95 && !q.hot) { q.hot = true; addAlarm('high','配额【'+q.name.replace('配额：','')+'】完成 '+q.done+'/'+q.target+'（95%），即将满格'); }
+  });
+}
+
+/* ── 坐席墙 ── */
+function renderWall() {
+  var fs = $id('fState').value, fg = $id('fGroup').value;
+  var html = '';
+  agents.forEach(function(a) {
+    if (fs && a.state!==fs) return;
+    if (fg && a.group!==fg) return;
+    var dur = nowSec() - a.since;
+    var ops = '';
+    var canListen = a.state==='TALKING';
+    var canForce = a.state!=='LOGOUT';
+    ops += '<button class="op listen" title="监听" '+(canListen?'':'disabled')+' onclick="doListen(\''+a.no+'\')">🎧监听</button>';
+    ops += '<button class="op listen" title="插话" '+(canListen?'':'disabled')+' onclick="doBarge(\''+a.no+'\')">🗣插话</button>';
+    ops += '<button class="op" title="发消息" '+(canForce?'':'disabled')+' onclick="doMsg(\''+a.no+'\')">✉消息</button>';
+    ops += '<button class="op force" title="强制挂断" '+(a.state==='TALKING'?'':'disabled')+' onclick="doForce(\''+a.no+'\',\'FORCEHANGUP\')">⛔强挂</button>';
+    ops += '<button class="op force" title="强制示忙" '+((a.state==='READY'||a.state==='ACW')?'':'disabled')+' onclick="doForce(\''+a.no+'\',\'FORCEBUSY\')">🚫强忙</button>';
+    ops += '<button class="op force" title="强制示闲" '+(a.state==='AUX'?'':'disabled')+' onclick="doForce(\''+a.no+'\',\'FORCEIDLE\')">▶强闲</button>';
+    ops += '<button class="op force" title="强制签出" '+(canForce?'':'disabled')+' onclick="doForce(\''+a.no+'\',\'FORCELOGOUT\')">⏏签出</button>';
+    html += '<div class="acard '+a.state+(listening===a.no?' listened':'')+'" id="card-'+a.no+'">'+
+      '<div class="a-head"><span class="a-no">'+a.no+'</span><span class="a-name">'+esc(a.name)+' · '+esc(a.group)+'</span>'+
+      '<span class="a-state '+a.state+'">'+ST_TEXT[a.state]+'</span></div>'+
+      '<div class="a-flags">'+(listening===a.no?'🎧':'')+(a.msgFlag?'📩':'')+'</div>'+
+      '<div class="a-line"><span>'+ST_TEXT[a.state]+'时长</span><span class="a-timer" data-dur="'+a.no+'">'+fmt(dur)+'</span></div>'+
+      (a.state==='TALKING'
+        ? '<div class="a-line"><span>通话计时</span><span class="a-timer" data-call="'+a.no+'">'+fmt(a.callSec)+'</span></div>'
+        : '')+
+      '<div class="a-sample">项目 '+(a.proj||'-')+' · 样本 '+(a.sample||'-')+(a.reason?'（示忙原因：'+esc(a.reason)+'）':'')+'</div>'+
+      '<div class="a-ops">'+ops+'</div></div>';
+  });
+  $id('wall').innerHTML = html || '<div style="grid-column:1/-1;text-align:center;color:#98a4b3;padding:40px">无匹配坐席</div>';
+  renderSummary();
+}
+
+/* ── 监听 / 插话 / 强控 / 消息 ── */
+function doListen(no) {
+  if (listening) stopListen(true);
+  listening = no;
+  elog('监听建立：坐席 '+no+'（LISTEN，旁听Leg）事件写 cti_monitor_event','sys');
+  toast('🎧 正在监听坐席 '+no+' 的通话（旁听，坐席可配置不感知）','listen');
+  $id('sbListen').textContent = no;
+  renderWall();
+  var a = aByNo(no);
+  $id('modalRoot').innerHTML = '<div class="mask" onclick="if(event.target===this)closeModal()"><div class="modal">'+
+    '<div class="mhead">监听中 · 坐席 '+no+' '+esc(a.name)+'</div><div class="mbody">'+
+    '项目：'+a.proj+' · 样本：'+a.sample+'<br>通话计时：<b class="a-timer" id="lsTimer">'+fmt(a.callSec)+'</b><br>'+
+    '<span style="color:#7d8ca0;font-size:12px">监听为旁听模式；点击【插话】将建立三方通话（BARGE）。</span></div>'+
+    '<div class="mfoot"><button class="btn barge" onclick="closeModal();doBarge(\''+no+'\')">🗣 插话（三方）</button>'+
+    '<button class="btn" onclick="closeModal();stopListen(false)">停止监听</button></div></div></div>';
+}
+function stopListen(silent) {
+  if (!listening) return;
+  elog('监听结束：坐席 '+listening,'sys');
+  listening = null;
+  $id('sbListen').textContent = '无';
+  renderWall();
+  if (!silent) toast('已停止监听');
+}
+function doBarge(no) {
+  var a = aByNo(no);
+  if (!a || a.state!=='TALKING') { toast('该坐席当前不在通话中','force'); return; }
+  if (!confirm('确认对坐席 '+no+' 插话？\n插话后转为三方通话（坐席、客户、督导），全程留痕。')) return;
+  elog('插话（BARGE）：坐席 '+no+' 转三方通话，写 cti_monitor_event','err');
+  toast('🗣 已插入坐席 '+no+' 通话（三方）','force');
+  stopListen(true);
+}
+function doMsg(no) {
+  $id('modalRoot').innerHTML = '<div class="mask" onclick="if(event.target===this)closeModal()"><div class="modal">'+
+    '<div class="mhead">发送消息 · 坐席 '+no+'</div><div class="mbody">'+
+    '<textarea id="msgText" style="width:100%;border:1px solid #d0d7de;border-radius:4px;padding:8px;min-height:70px;font-family:inherit" placeholder="输入提示消息，坐席端将弹窗显示">请注意语速，第3题请完整读出选项。</textarea></div>'+
+    '<div class="mfoot"><button class="btn" onclick="closeModal()">取消</button>'+
+    '<button class="btn primary" onclick="sendMsg(\''+no+'\')">发送</button></div></div></div>';
+}
+function sendMsg(no) {
+  var t = $id('msgText').value;
+  closeModal();
+  var a = aByNo(no);
+  a.msgFlag = true;
+  setTimeout(function(){ a.msgFlag=false; renderWall(); }, 6000);
+  elog('消息下发给坐席 '+no+'："'+t+'"（MESSAGE）','warn');
+  toast('✉ 消息已发送至坐席 '+no+' 席端');
+  renderWall();
+}
+function doForce(no, action) {
+  var names = { FORCEHANGUP:'强制挂断', FORCEBUSY:'强制示忙', FORCEIDLE:'强制示闲', FORCELOGOUT:'强制签出' };
+  if (!confirm('确认对坐席 '+no+' 执行【'+names[action]+'】？操作将写 cti_monitor_event 并通知坐席。')) return;
+  var a = aByNo(no);
+  elog('强制操作：'+names[action]+' → 坐席 '+no+'（'+action+'）','err');
+  if (listening===no) stopListen(true);
+  if (action==='FORCEHANGUP') { a.state='ACW'; a.since=nowSec(); toast('⛔ 坐席 '+no+' 话务已强制挂断，进入后处理','force'); }
+  if (action==='FORCEBUSY')   { a.state='AUX'; a.since=nowSec(); a.reason='督导强制'; toast('🚫 坐席 '+no+' 已被强制示忙','force'); }
+  if (action==='FORCEIDLE')   { a.state='READY'; a.since=nowSec(); a.reason=null; toast('▶ 坐席 '+no+' 已被强制示闲','force'); }
+  if (action==='FORCELOGOUT') { a.state='LOGOUT'; a.since=nowSec(); if(a.sample && a.sample!=='-'){ elog('其样本 '+a.sample+' 已回收回池（派样锁释放）','warn'); } a.sample='-'; a.proj='-'; toast('⏏ 坐席 '+no+' 已被强制签出','force'); }
+  renderWall();
+}
+function closeModal() { $id('modalRoot').innerHTML=''; }
+
+/* ── 仿真引擎：让监控墙"活"起来 ── */
+setInterval(function () {   /* 每秒：时钟与计时刷新 */
+  $id('clock').textContent = clockStr();
+  agents.forEach(function(a) {
+    var d = document.querySelector('[data-dur="'+a.no+'"]');
+    if (d) d.textContent = fmt(nowSec()-a.since);
+    var c = document.querySelector('[data-call="'+a.no+'"]');
+    if (c) { a.callSec += 1; c.textContent = fmt(a.callSec); }
+  });
+  var ls = document.getElementById('lsTimer');
+  if (ls && listening) { var a=aByNo(listening); if(a) ls.textContent = fmt(a.callSec); }
+}, 1000);
+
+setInterval(function () {   /* 每 3.5s：一次随机业务流转 */
+  var i, a;
+  var pool = function(pred){ return agents.filter(pred); };
+  /* DIALING -> RINGING -> 结果 */
+  var dial = pool(function(a){ return a.state==='DIALING'; });
+  if (dial.length && Math.random()<0.7) {
+    a = dial[Math.floor(Math.random()*dial.length)];
+    a.state='RINGING'; a.since=nowSec();
+    setTimeout(function(){
+      if (a.state!=='RINGING') return;
+      if (Math.random()<0.65) { a.state='TALKING'; a.since=nowSec(); a.callSec=0; elog('外呼接通：'+a.no+' ← '+a.sample,'ok'); }
+      else { finishCall(a, Math.random()<0.5?'NA':'BUSY'); }
+      renderWall();
+    }, 1800+Math.random()*1600);
+    renderWall(); return;
+  }
+  /* TALKING -> 挂机 */
+  var talk = pool(function(a){ return a.state==='TALKING' && a.callSec>15; });
+  if (talk.length && Math.random()<0.35) {
+    a = talk[Math.floor(Math.random()*talk.length)];
+    finishCall(a, Math.random()<0.62 ? 'SUCCESS' : (Math.random()<0.5?'BREAKOFF':'QUFAIL'));
+    renderWall(); return;
+  }
+  /* ACW -> READY */
+  var acw = pool(function(a){ return a.state==='ACW' && nowSec()-a.since>12; });
+  if (acw.length) { a=acw[0]; a.state='READY'; a.since=nowSec(); a.sample='-'; renderWall(); return; }
+  /* READY -> 新外呼 */
+  var ready = pool(function(a){ return a.state==='READY'; });
+  if (ready.length && Math.random()<0.5) {
+    a = ready[Math.floor(Math.random()*ready.length)];
+    a.state='DIALING'; a.since=nowSec();
+    a.sample='S-' + (1020 + Math.floor(Math.random()*80));
+    a.proj='P2026-001'; proj.dial+=1;
+    renderWall(); return;
+  }
+  /* LOGOUT 偶尔签入 */
+  var off = pool(function(a){ return a.state==='LOGOUT'; });
+  if (off.length && Math.random()<0.06) {
+    a=off[0]; a.state='READY'; a.since=nowSec();
+    elog('坐席签入：'+a.no+'（LOGIN→READY）','sys'); renderWall();
+  }
+}, 3500);
+
+function finishCall(a, code) {
+  proj.connect += (code==='SUCCESS'||code==='BREAKOFF'||code==='QUFAIL') ? 1 : 0;
+  if (code==='SUCCESS') {
+    proj.success += 1;
+    var q = proj.quotas[Math.floor(Math.random()*2)];
+    q.done += 1;
+    elog('成功答卷：'+a.no+' · 样本 '+a.sample+'（配额 '+q.name.replace('配额：','')+' +1）','ok');
+  } else {
+    proj.fail += 1;
+    elog('话务结束：'+a.no+' · 结果 '+code,'warn');
+  }
+  a.state='ACW'; a.since=nowSec(); a.callSec=0;
+  renderSummary(); renderQuota(); checkQuotaAlarms();
+}
+
+/* ── 初始 ── */
+renderWall(); renderQuota(); renderAlarms(); renderSummary();
+elog('=== 督导监控墙原型已加载（内置话务仿真引擎） ===','sys');
+elog('提示：点击坐席卡上的 🎧监听 / 🗣插话 / ✉消息 / 强制操作 体验全流程','sys');
+</script>
+</body>
+</html>
