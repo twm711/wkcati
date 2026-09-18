@@ -37,7 +37,8 @@ cd nk3c-go/web && pnpm install && pnpm dev
 ```bash
 cd nk3c-demo && python3 -m pytest test_api.py -v      # 31 条链路断言
 cd nk3c-go  && go test ./internal/itests/ -race -v    # 9 条业务链路
-cd nk3c-go  && go test ./internal/media/ -v            # SIP/RTP 真实呼入 E2E（diago 回环）
+cd nk3c-go  && go test ./internal/media/ -v            # SIP/RTP E2E ×3（呼入转人工/外呼调研/录音）
+bash autotest/sip_drill.sh                             # gophone 真机演练 6 断言（需 gophone + :5060/:8080 在跑）
 cd nk3c-go/web && pnpm build                          # tsc --noEmit 严格类型检查
 ```
 
@@ -61,7 +62,7 @@ cd nk3c-go/web && pnpm build                          # tsc --noEmit 严格类�
 
 - ✅ **M0** 可运行骨架（gin+ResultInfo+RBAC+迁移+React 五页）
 - ✅ **M1** 业务闭环（派样四过滤/配额原子/结果码去向/审核状态机/工单回访 E2E/IVR 解释器）
-- ◐ **M2** 话务域：diago 已接入——真实 SIP 呼入 IVR（DTMF→转人工落工单，SIP E2E 全绿）；外呼腿/B2BUA 待接
+- ◐ **M2** 话务域：呼入 IVR + 外呼自动调研腿 + 录音落盘/回放（SIP E2E ×3 + gophone 真机演练 6/6）；B2BUA 坐席桥接待接
 - ◻ **M3+** 录音质检/SPSS 导出移植/WS Hub/多机拓扑 → 见《实现文档_GoReact版》
 
 > ⚠️ 已知环境约束：2GB 内存下 `modernc.org/sqlite` 编译与 `vite build` 均会 OOM，生产构建需 ≥4GB（详见 [交接文档](交接文档.md) §7）。

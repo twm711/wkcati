@@ -3,14 +3,17 @@ package app
 
 import (
 	"database/sql"
-	"strconv"
 	"encoding/json"
+	"errors"
+	"os"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
 	"nk3c/internal/agent"
 	"nk3c/internal/auth"
 	"nk3c/internal/ivr"
+	"nk3c/internal/media"
 	"nk3c/internal/monitor"
 	"nk3c/internal/project"
 	"nk3c/internal/store"
@@ -19,9 +22,10 @@ import (
 )
 
 type App struct {
-	DB     *store.DB
-	Auth   *auth.Service
-	Engine *gin.Engine
+	DB       *store.DB
+	Auth     *auth.Service
+	Engine   *gin.Engine
+	apiGroup *gin.RouterGroup
 }
 
 func Build(db *store.DB) *App {
@@ -87,6 +91,24 @@ func Build(db *store.DB) *App {
 		w.POST("/:tid/resolve", wk.Resolve)
 		w.POST("/:tid/close", wk.Close)
 
+		// 录音回放：按话务 ID 取 WAV（呼入/外呼通用）
+		api.GET("/recording/:callId", func(c *gin.Context) {
+			callID := c.Param("callId")
+			var rec string
+			err := db.QueryRow(`SELECT record_file FROM cti_call_record WHERE id=?`, callID).Scan(&rec)
+			if err != nil || rec == "" {
+				err = db.QueryRow(`SELECT record_file FROM ivr_call_log WHERE id=?`, callID).Scan(&rec)
+			}
+			if err != nil || rec == "" {
+				rinfo.GinFail(c, rinfo.CodeNotFound, "无录音（未接通或未开启录音）"); return
+			}
+			if _, err := os.Stat(rec); err != nil {
+				rinfo.GinFail(c, rinfo.CodeNotFound, "录音文件已清理"); return
+			}
+			c.Header("Content-Disposition", `inline; filename="recording-`+callID+`.wav"`)
+			c.File(rec)
+		})
+
 		ivg := api.Group("/ivr")
 		ivg.GET("/flow", iv.GetFlow)
 		ivg.PUT("/flow", a.RequireRoles("groupAdmin"), iv.PutFlow)
@@ -96,7 +118,27 @@ func Build(db *store.DB) *App {
 		ivg.GET("/logs", iv.Logs)
 	}
 
-	return &App{DB: db, Auth: a, Engine: e}
+	app := &App{DB: db, Auth: a, Engine: e, apiGroup: api}
+	return app
+}
+
+// RegisterDial 挂载外呼腿路由（话务域启动后由 main 调用；POST /api/agent/calls/:callId/dial）
+func (a *App) RegisterDial(o *media.OutboundCaller) {
+	a.apiGroup.POST("/agent/calls/:callId/dial", func(c *gin.Context) {
+		callID, err := strconv.ParseInt(c.Param("callId"), 10, 64)
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeParam, "callId 非法"); return
+		}
+		data, msg, err := o.Dial(c.Request.Context(), callID)
+		if err != nil {
+			var be *agent.BizErr
+			if errors.As(err, &be) {
+				rinfo.GinFail(c, be.Code, be.Msg); return
+			}
+			rinfo.GinFail(c, rinfo.CodeState, err.Error()); return
+		}
+		rinfo.GinOK(c, data, msg)
+	})
 }
 
 func sheetList(db *store.DB) gin.HandlerFunc {

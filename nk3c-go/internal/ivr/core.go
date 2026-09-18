@@ -15,6 +15,7 @@ import (
 type NodeState struct {
 	SessionID string
 	CallerNo  string
+	RecordFile string // 录音落盘路径（呼入腿）
 	NodeID    string
 	NodeType  string
 	Text      string

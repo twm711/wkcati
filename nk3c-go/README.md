@@ -19,7 +19,8 @@ go run ./cmd/nk3c-api --addr :8080 --sip-addr 0.0.0.0:5060 --reset
 
 ```bash
 go test ./internal/itests/ -v   # 9 条业务链路集成测试
-go test ./internal/media/ -v    # SIP/RTP 真实呼入 E2E（diago 双端同进程回环，无需真机/IPPBX）
+go test ./internal/media/ -v    # SIP/RTP E2E ×3：呼入转人工 / 外呼自动调研(派样→外呼→DTMF 答题→闭环+录音) / 呼入录音
+bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone 二进制 + 双服务在跑）
 ```
 
 ## 结构
@@ -28,11 +29,11 @@ go test ./internal/media/ -v    # SIP/RTP 真实呼入 E2E（diago 双端同进�
 - `pkg/ids` 雪花 ID（JSON 序列化为字符串，规避前端 Long 精度丢失）
 - `internal/store` 双方言数据层 + 嵌入式迁移（18 表 + 种子）
 - `internal/auth|project|agent|monitor|workorder|ivr` 六大业务域
-- `internal/media` 话务域（M2 呼入）：diago SIP 服务器 + IvrDriver 接口 + 运行时合成提示音
+- `internal/media` 话务域（M2）：diago SIP 服务器（呼入 IVR + 外呼自动调研腿）+ IvrDriver/AgentDriver 接口 + 运行时合成提示音 + 录音落盘（audio_tap 单消费者：录音 tap 叠加 RTP 事件检测）
 - `internal/app` 装配与路由
 - SQLite 驱动：mattn/go-sqlite3（CGO）；如需 CGO-free 可换 modernc.org/sqlite（编译需 ≥4GB 内存）
 
-> 话务域 M2 呼入已落地：真实 SIP 呼入 IVR（diago v0.32.2，Go ≥1.23）；外呼腿/B2BUA/录音为待增量。
+> 话务域 M2：呼入 IVR、外呼自动调研腿、录音落盘/回放均已落地（diago v0.32.2，Go ≥1.23）；坐席 B2BUA 桥接待接。外呼需 `--outbound host:port` 指向被叫/中继。
 
 ## 前端 web/（React 18 + Antd 5 + Vite 5）
 

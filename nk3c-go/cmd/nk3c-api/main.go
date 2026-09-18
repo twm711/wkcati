@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -27,6 +28,7 @@ func main() {
 	dsn := flag.String("dsn", "file:nk3c.db?_journal=WAL&_busy_timeout=5000", "数据库 DSN")
 	force := flag.Bool("reset", false, "启动时重建数据库（演示种子）")
 	sipAddr := flag.String("sip-addr", "0.0.0.0:5060", "话务域 SIP/UDP 监听（空=禁用真实话务域）")
+	outbound := flag.String("outbound", "", "外呼路由 host:port（被叫模拟器/中继；空=外呼腿不可用）")
 	flag.Parse()
 
 	db, err := store.Open("sqlite", *dsn)
@@ -54,6 +56,27 @@ func main() {
 					log.Printf("[话务域] 转人工已自动落工单：session=%s caller=%s", st.SessionID, st.CallerNo)
 				}
 			},
+		}
+		srv.RecordDir = "recordings"
+		if ph, pp, e := net.SplitHostPort(*outbound); e == nil && ph != "" {
+			pn, _ := strconv.Atoi(pp)
+			go func() { // OutboundCaller 由 Start 装配后补路由
+				for srv.Outbound == nil {
+					time.Sleep(100 * time.Millisecond)
+				}
+				srv.Outbound.PeerHost, srv.Outbound.PeerPort = ph, pn
+				srv.Outbound.OnRecorded = func(callID int64, path string) {
+					_, _ = db.Exec(`UPDATE cti_call_record SET record_file=? WHERE id=?`, path, callID)
+				}
+				a.RegisterDial(srv.Outbound)
+				log.Printf("外呼腿已挂载：路由 %s:%d（POST /api/agent/calls/:callId/dial）", ph, pn)
+			}()
+		}
+		srv.OnFinish = func(st ivr.NodeState) { // 呼入录音路径回填话务日志
+			if st.RecordFile != "" {
+				_, _ = db.Exec(`UPDATE ivr_call_log SET record_file=? WHERE id=(SELECT MAX(id) FROM ivr_call_log WHERE caller_no=?)`,
+					st.RecordFile, st.CallerNo)
+			}
 		}
 		go func() {
 			if err := srv.Start(ctx); err != nil && ctx.Err() == nil {

@@ -98,6 +98,10 @@ export default function Monitor() {
             { title: '结果码', dataIndex: 'result_code', render: (v) => (v ? <Tag color="blue">{String(v)}</Tag> : '-') },
             { title: '开始', dataIndex: 'begin_time', render: (v) => String(v ?? '').slice(11, 19) },
             { title: '接通', dataIndex: 'connect_time', render: (v) => (v ? String(v).slice(11, 19) : '-') },
+            {
+              title: '录音', dataIndex: 'record_file', width: 60,
+              render: (v, row) => (v ? <a href={`/api/recording/${row.id}`} target="_blank" rel="noreferrer">▶</a> : '-'),
+            },
           ]}
         />
       </Card>

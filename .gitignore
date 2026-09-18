@@ -34,3 +34,6 @@ Thumbs.db
 # ═══ 沙箱/工具目录 ═══
 .cache/
 .local/
+
+# ═══ 话务域录音（运行产物，不入库）═══
+recordings/

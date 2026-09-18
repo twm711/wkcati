@@ -60,7 +60,7 @@ func (s *Service) Wall(c *gin.Context) {
 
 func (s *Service) Calls(c *gin.Context) {
 	limit := c.DefaultQuery("limit", "12")
-	rows, err := s.db.Query(`SELECT c.id,c.sample_id,s.cust_name,c.agent_no,c.status,c.result_code,c.begin_time,c.connect_time
+	rows, err := s.db.Query(`SELECT c.id,c.sample_id,s.cust_name,c.agent_no,c.status,c.result_code,c.begin_time,c.connect_time,COALESCE(c.record_file,'')
 		FROM cti_call_record c LEFT JOIN smp_sample s ON s.id=c.sample_id ORDER BY c.id DESC LIMIT ` + limit)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
@@ -69,12 +69,12 @@ func (s *Service) Calls(c *gin.Context) {
 	out := []map[string]interface{}{}
 	for rows.Next() {
 		var id int64
-		var agentNo, status string
+		var agentNo, status, rec string
 		var sampleID interface{}
 		var cust, rc, begin, conn interface{}
-		_ = rows.Scan(&id, &sampleID, &cust, &agentNo, &status, &rc, &begin, &conn)
+		_ = rows.Scan(&id, &sampleID, &cust, &agentNo, &status, &rc, &begin, &conn, &rec)
 		out = append(out, map[string]interface{}{"id": id, "sample_id": sampleID, "cust_name": cust,
-			"agent_no": agentNo, "status": status, "result_code": rc, "begin_time": begin, "connect_time": conn})
+			"agent_no": agentNo, "status": status, "result_code": rc, "begin_time": begin, "connect_time": conn, "record_file": rec})
 	}
 	rinfo.GinOK(c, out, "ok")
 }

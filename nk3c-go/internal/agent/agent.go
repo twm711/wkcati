@@ -3,6 +3,7 @@ package agent
 
 import (
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -160,72 +161,15 @@ func (s *Service) Answer(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
 	}
-	err := s.db.Tx(func(tx *sql.Tx) error {
-		var callProject, callSample int64
-		var status string
-		var connect *string
-		if err := tx.QueryRow(`SELECT project_id,sample_id,status,connect_time FROM cti_call_record WHERE id=? AND agent_id=?`,
-			req.CallID, u.ID).Scan(&callProject, &callSample, &status, &connect); err != nil {
-			rinfo.GinFail(c, rinfo.CodeNotFound, "话务不存在或非本坐席话务"); return errAbort
-		}
-		if status == "CLOSED" {
-			rinfo.GinFail(c, rinfo.CodeConflict, "话务已结束，不能再作答"); return errAbort
-		}
-		var qnrID int64
-		if err := tx.QueryRow(`SELECT questionnaire_id FROM prj_project WHERE id=?`, callProject).Scan(&qnrID); err != nil {
-			rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return err
-		}
-		var one int
-		_ = tx.QueryRow(`SELECT 1 FROM qnr_question WHERE id=? AND qnr_id=?`, req.QuestionID, qnrID).Scan(&one)
-		if one != 1 {
-			rinfo.GinFail(c, rinfo.CodeParam, fmt.Sprintf("题目 %d 不属于项目 %d 的问卷（跨项目作答被拒）", req.QuestionID, callProject)); return errAbort
-		}
-		ts := store.NowISO()
-		if connect == nil || *connect == "" {
-			if _, err := tx.Exec(`UPDATE cti_call_record SET connect_time=? WHERE id=?`, ts, req.CallID); err != nil { return err }
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='INCALL' WHERE id=?`, callSample); err != nil { return err }
-		}
-		var sheetID int64
-		var qver string
-		err := tx.QueryRow(`SELECT s.id, s.qnr_version FROM ans_sheet s WHERE s.call_id=?`, req.CallID).Scan(&sheetID, &qver)
-		if err == sql.ErrNoRows {
-			var version string
-			_ = tx.QueryRow(`SELECT version FROM qnr_questionnaire WHERE id=?`, qnrID).Scan(&version)
-			ins, err := tx.Exec(`INSERT INTO ans_sheet(call_id,project_id,sample_id,agent_id,qnr_id,qnr_version,status)
-				VALUES(?,?,?,?,?,?,'DOING')`, req.CallID, callProject, callSample, u.ID, qnrID, version)
-			if err != nil { return err }
-			sheetID, _ = ins.LastInsertId()
-		} else if err != nil {
-			return err
-		}
-		optsJSON := "[]"
-		if len(req.OptionIDs) > 0 {
-			b, _ := json.Marshal(req.OptionIDs)
-			optsJSON = string(b)
-		}
-		var nv interface{}
-		if req.NumericValue != nil { nv = *req.NumericValue }
-		// 数值题范围校验（前端双重拦截的后端兜底）
-		var mn, mx sql.NullFloat64
-		var qt string
-		_ = tx.QueryRow(`SELECT q_type,min_value,max_value FROM qnr_question WHERE id=?`, req.QuestionID).Scan(&qt, &mn, &mx)
-		if qt == "number" && nv != nil {
-			if mn.Valid && *req.NumericValue < mn.Float64 || mx.Valid && *req.NumericValue > mx.Float64 {
-				rinfo.GinFail(c, rinfo.CodeParam, fmt.Sprintf("数值超出范围 %v ~ %v", mnSafe(mn), mxSafe(mx))); return errAbort
-			}
-		}
-		_, err = tx.Exec(`INSERT INTO ans_answer(sheet_id,question_id,option_ids,answer_text,numeric_value,answered_at)
-			VALUES(?,?,?,?,?,?)
-			ON CONFLICT(sheet_id,question_id) DO UPDATE SET option_ids=excluded.option_ids,
-			answer_text=excluded.answer_text,numeric_value=excluded.numeric_value,answered_at=excluded.answered_at`,
-			sheetID, req.QuestionID, optsJSON, req.AnswerText, nv, ts)
-		if err != nil { return err }
-		rinfo.GinOK(c, gin.H{"sheetId": sheetID, "answeredAt": ts}, "答案已实时入库（断点续答依据）")
-		return errAbort
-	})
-	if err != nil && err != errAbort {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+	sheetID, answeredAt, err := s.answerCore(u.ID, req.CallID, req.QuestionID, req.OptionIDs, req.AnswerText, req.NumericValue)
+	var be *BizErr
+	if errors.As(err, &be) {
+		rinfo.GinFail(c, be.Code, be.Msg); return
 	}
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+	}
+	rinfo.GinOK(c, gin.H{"sheetId": sheetID, "answeredAt": answeredAt}, "答案已实时入库（断点续答依据）")
 }
 
 type resultReq struct {
@@ -240,85 +184,21 @@ func (s *Service) Result(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
 	}
-	err := s.db.Tx(func(tx *sql.Tx) error {
-		var sampleID int64
-		var status string
-		var rc *string
-		if err := tx.QueryRow(`SELECT sample_id,status,result_code FROM cti_call_record WHERE id=? AND agent_id=?`,
-			req.CallID, u.ID).Scan(&sampleID, &status, &rc); err != nil {
-			rinfo.GinFail(c, rinfo.CodeNotFound, "话务不存在或非本坐席话务"); return errAbort
-		}
-		if rc != nil && *rc != "" {
-			rinfo.GinOK(c, gin.H{"duplicate": true, "firstResultCode": *rc}, "幂等：返回首写结果")
-			return errAbort
-		}
-		var closes, reopen, hitBlack int
-		var category string
-		if err := tx.QueryRow(`SELECT category,closes_call,reopen_sample,hit_black_flag FROM smp_status_code WHERE code=?`,
-			req.ResultCode).Scan(&category, &closes, &reopen, &hitBlack); err != nil {
-			rinfo.GinFail(c, rinfo.CodeParam, "未知结果码"); return errAbort
-		}
-		ts := store.NowISO()
-		dest := "REDIAL_POOL"
-		switch {
-		case category == "SUCCESS":
-			dest = "CLOSED_SUCCESS"
-		case category == "APPOINT":
-			dest = "APPOINT_QUEUE"
-		case hitBlack == 1:
-			dest = "BANNED"
-		case category == "FAIL" && closes == 1:
-			dest = "CLOSED_" + req.ResultCode
-		}
-		var sheetID int64
-		var sheetStatus string
-		err := tx.QueryRow(`SELECT id,status FROM ans_sheet WHERE call_id=?`, req.CallID).Scan(&sheetID, &sheetStatus)
-		hasSheet := err == nil
-		if hasSheet && closes == 1 {
-			sheetStatus = "SUBMITTED"
-			if _, err := tx.Exec(`UPDATE ans_sheet SET status='SUBMITTED' WHERE id=?`, sheetID); err != nil { return err }
-		}
-		if hitBlack == 1 { // 自动入黑名单（INVALID/REFUSE）
-			var phone string
-			_ = tx.QueryRow(`SELECT phone_no FROM smp_phone WHERE sample_id=? AND valid_flag=1 ORDER BY sort_no LIMIT 1`, sampleID).Scan(&phone)
-			if phone != "" {
-				var bl int
-				_ = tx.QueryRow(`SELECT 1 FROM smp_blacklist WHERE phone_no=?`, phone).Scan(&bl)
-				if bl != 1 {
-					var bid int64
-					_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM smp_blacklist`).Scan(&bid)
-					if _, err := tx.Exec(`INSERT INTO smp_blacklist VALUES(?,?,?,?)`, bid, phone, "GLOBAL", "自动-"+req.ResultCode); err != nil { return err }
-				}
-			}
-		}
-		if dest == "CLOSED_SUCCESS" {
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='SUCCESS', last_connected_at=? WHERE id=?`, ts, sampleID); err != nil { return err }
-		} else if hitBlack == 1 {
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='BANNED' WHERE id=?`, sampleID); err != nil { return err }
-		} else if closes == 1 {
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='CLOSED' WHERE id=?`, sampleID); err != nil { return err }
-		} else { // 回池：attempts+1
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='IDLE', attempts=attempts+1 WHERE id=?`, sampleID); err != nil { return err }
-		}
-		quotaConsume := ""
-		if hasSheet && sheetID > 0 {
-			hit, err := tryConsumeQuota(tx, sheetID)
-			if err != nil { return err }
-			if hit { quotaConsume = "CONSUMED" } else { quotaConsume = "QUOTA_FULL_OVERFLOW" }
-		}
-		if _, err := tx.Exec(`UPDATE cti_call_record SET status='CLOSED', end_time=?, result_code=? WHERE id=?`,
-			ts, req.ResultCode, req.CallID); err != nil { return err }
-		data := gin.H{"sampleId": sampleID, "destination": dest}
-		if hasSheet {
-			data["sheetStatus"] = sheetStatus
-			data["quotaConsume"] = quotaConsume
-		}
-		rinfo.GinOK(c, data, fmt.Sprintf("结果码 %s 已提交，样本 → %s", req.ResultCode, dest))
-		return errAbort
-	})
-	if err != nil && err != errAbort {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+	data, msg, err := s.resultCore(u.ID, req.CallID, req.ResultCode)
+	var be *BizErr
+	if errors.As(err, &be) {
+		rinfo.GinFail(c, be.Code, be.Msg); return
 	}
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+	}
+	if data == nil { // 幂等重复提交：读取首写结果
+		var first string
+		_ = s.db.QueryRow(`SELECT result_code FROM cti_call_record WHERE id=?`, req.CallID).Scan(&first)
+		rinfo.GinOK(c, gin.H{"duplicate": true, "firstResultCode": first}, "幂等：返回首写结果")
+		return
+	}
+	rinfo.GinOK(c, data, msg)
 }
 
 // tryConsumeQuota 配额原子扣减：UPDATE ... WHERE done<target（0 行=满格 overflow）

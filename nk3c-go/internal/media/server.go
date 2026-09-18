@@ -4,9 +4,9 @@ package media
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"time"
 
 	"github.com/emiago/diago"
@@ -22,16 +22,18 @@ type IvrDriver interface {
 	HangupSIP(sid string) (ivr.NodeState, error)
 }
 
-// SIPServer 话务域服务器（呼入 IVR）
+// SIPServer 话务域服务器（呼入 IVR + 外呼执行器）
 type SIPServer struct {
-	Driver   IvrDriver
-	BindHost string // SIP/RTP 绑定地址（默认 0.0.0.0）
-	BindPort int    // SIP 端口（RTP 使用同主机临时端口段）
-	DtmfWait time.Duration
-	OnFinish func(st ivr.NodeState) // 会话结束回调（监控/日志钩子）
+	Driver    IvrDriver
+	BindHost  string // SIP/RTP 绑定地址（默认 0.0.0.0）
+	BindPort  int    // SIP 端口（RTP 使用同主机临时端口段）
+	DtmfWait  time.Duration
+	RecordDir string                 // 录音目录（默认 recordings/）
+	OnFinish  func(st ivr.NodeState) // 会话结束回调（监控/日志钩子）
+
+	Outbound *OutboundCaller // Start 后可用（外呼腿；需配 Peer 路由）
 }
 
-var errStop = errors.New("dtmf-received")
 
 // Start 阻塞运行（调用方包 goroutine）；ctx 取消即关停
 func (s *SIPServer) Start(ctx context.Context) error {
@@ -51,14 +53,23 @@ func (s *SIPServer) Start(ctx context.Context) error {
 		BindHost:  host,
 		BindPort:  s.BindPort,
 	}))
-	slog.Info("话务域 SIP 服务器已启动", "addr", fmt.Sprintf("%s:%d (udp)", host, s.BindPort))
+	recDir := s.RecordDir
+	if recDir == "" {
+		recDir = "recordings"
+	}
+	s.Outbound = &OutboundCaller{
+		dg:        dg,
+		RecordDir: recDir,
+		DtmfWait:  s.DtmfWait,
+	}
+	slog.Info("话务域 SIP 服务器已启动", "addr", fmt.Sprintf("%s:%d (udp)", host, s.BindPort), "recordDir", recDir)
 	return dg.Serve(ctx, func(in *diago.DialogServerSession) {
-		s.handle(ctx, in)
+		s.handle(ctx, in, recDir)
 	})
 }
 
 // handle 单通呼入：diago 会话 ↔ ivr 核心引擎 的驱动循环
-func (s *SIPServer) handle(ctx context.Context, in *diago.DialogServerSession) {
+func (s *SIPServer) handle(ctx context.Context, in *diago.DialogServerSession, recDir string) {
 	callerNo := in.FromUser()
 	st, err := s.Driver.StartSIP(callerNo)
 	if err != nil {
@@ -75,6 +86,7 @@ func (s *SIPServer) handle(ctx context.Context, in *diago.DialogServerSession) {
 		_, _ = s.Driver.HangupSIP(st.SessionID) // ABANDONED 落库
 		return
 	}
+	tap := startAudioTap(&in.DialogMedia, filepath.Join(recDir, "in-"+st.SessionID+".wav"))
 	pb, pbErr := in.PlaybackCreate()
 
 	timeouts := 0
@@ -90,8 +102,8 @@ func (s *SIPServer) handle(ctx context.Context, in *diago.DialogServerSession) {
 		if st.NodeType == "end" || st.Done {
 			break
 		}
-		// 收 DTMF
-		key, kerr := s.readDTMF(ctx, in, s.DtmfWait)
+		// 收 DTMF（会话音频 tap：录音与事件检测同链）
+		key, kerr := tap.key(ctx, s.DtmfWait)
 		if kerr != nil {
 			slog.Warn("DTMF 读取中断（主叫可能已挂断）", "err", kerr)
 			break
@@ -124,43 +136,13 @@ func (s *SIPServer) handle(ctx context.Context, in *diago.DialogServerSession) {
 	} else if pbErr == nil && st.NodeType == "end" {
 		_, _ = pb.Play(bytes.NewReader(PromptFor("end")), "audio/wav")
 	}
-	slog.Info("SIP 通话结束", "session", st.SessionID, "outcome", st.Outcome, "answers", st.Answers)
+	st.RecordFile = tap.path
+	_ = tap.close()
+	slog.Info("SIP 通话结束", "session", st.SessionID, "outcome", st.Outcome, "answers", st.Answers, "record", tap.path)
 	if s.OnFinish != nil {
 		s.OnFinish(st)
 	}
 	_ = in.Hangup(ctx)
 }
 
-// readDTMF 阻塞收一个 DTMF 键；超时返回 (0,nil)；主叫挂断等错误向上返回
-func (s *SIPServer) readDTMF(ctx context.Context, in *diago.DialogServerSession, wait time.Duration) (rune, error) {
-	reader, err := in.AudioReaderDTMF()
-	if err != nil {
-		return 0, err
-	}
-	got := make(chan rune, 1)
-	fail := make(chan error, 1)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		lerr := reader.Listen(func(d rune) error {
-			select {
-			case got <- d:
-			default:
-			}
-			return errStop
-		}, wait)
-		if lerr != nil && !errors.Is(lerr, errStop) {
-			fail <- lerr
-		}
-	}()
-	select {
-	case d := <-got:
-		return d, nil
-	case lerr := <-fail:
-		return 0, lerr
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	case <-time.After(wait + 500*time.Millisecond):
-		return 0, nil
-	}
-}
+// （readDTMF 已泛化为 readDTMFMedia，见 outbound.go）

@@ -272,7 +272,7 @@ func (s *Service) Hangup(c *gin.Context) {
 }
 
 func (s *Service) Logs(c *gin.Context) {
-	rows, err := s.db.Query(`SELECT id,caller_no,start_time,end_time,outcome,path_json,answers_json
+	rows, err := s.db.Query(`SELECT id,caller_no,start_time,end_time,outcome,path_json,answers_json,COALESCE(record_file,'')
 		FROM ivr_call_log ORDER BY id DESC LIMIT 20`)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
@@ -281,11 +281,11 @@ func (s *Service) Logs(c *gin.Context) {
 	out := []map[string]interface{}{}
 	for rows.Next() {
 		var id int64
-		var callerNo, start, outcome, path, ans string
+		var callerNo, start, outcome, path, ans, rec string
 		var end interface{}
-		_ = rows.Scan(&id, &callerNo, &start, &end, &outcome, &path, &ans)
+		_ = rows.Scan(&id, &callerNo, &start, &end, &outcome, &path, &ans, &rec)
 		out = append(out, map[string]interface{}{"id": id, "caller_no": callerNo, "start_time": start,
-			"end_time": end, "outcome": outcome, "path_json": path, "answers_json": ans})
+			"end_time": end, "outcome": outcome, "path_json": path, "answers_json": ans, "record_file": rec})
 	}
 	rinfo.GinOK(c, out, "ok")
 }
