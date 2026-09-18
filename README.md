@@ -66,4 +66,4 @@ cd nk3c-go/web && pnpm build                          # tsc --noEmit 严格类�
 
 ## License
 
-内部交付物，未附开源许可证；转载/二次分发请先与项目所有者确认。
+[Apache-2.0](LICENSE)（仓库所有者建仓时选择）。注：项目文档中引用的南康科技 / ITACATI / NK-3C 商标与产品资料权利归原权利人所有，本项目为其复刻实现与教学演示。
