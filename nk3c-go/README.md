@@ -7,8 +7,10 @@
 
 ```bash
 go build ./...
-go run ./cmd/nk3c-api --addr :8080 --reset   # 首次/演示：重建种子数据
-# 打开 http://localhost:8080/api/health
+go run ./cmd/nk3c-api --addr :8080 --sip-addr 0.0.0.0:5060 --reset
+# API: http://localhost:8080/api/health
+# 话务域: SIP/UDP :5060 呼入 → IVR（1 调研 / 2 留言 / 0 转人工自动落工单）
+#（--sip-addr "" 禁用话务域；diago 需 Go ≥1.23 工具链）
 ```
 
 账号：admin（domainAdmin）/ sup01（groupAdmin）/ agent01（坐席 1020），密码均 123456。
@@ -16,7 +18,8 @@ go run ./cmd/nk3c-api --addr :8080 --reset   # 首次/演示：重建种子数�
 ## 测试
 
 ```bash
-go test ./internal/itests/ -v   # 9 条链路集成测试（登录鉴权/派样过滤/作答/结果码/审核/生命周期/工单回访/IVR）
+go test ./internal/itests/ -v   # 9 条业务链路集成测试
+go test ./internal/media/ -v    # SIP/RTP 真实呼入 E2E（diago 双端同进程回环，无需真机/IPPBX）
 ```
 
 ## 结构
@@ -25,10 +28,11 @@ go test ./internal/itests/ -v   # 9 条链路集成测试（登录鉴权/派样�
 - `pkg/ids` 雪花 ID（JSON 序列化为字符串，规避前端 Long 精度丢失）
 - `internal/store` 双方言数据层 + 嵌入式迁移（18 表 + 种子）
 - `internal/auth|project|agent|monitor|workorder|ivr` 六大业务域
+- `internal/media` 话务域（M2 呼入）：diago SIP 服务器 + IvrDriver 接口 + 运行时合成提示音
 - `internal/app` 装配与路由
 - SQLite 驱动：mattn/go-sqlite3（CGO）；如需 CGO-free 可换 modernc.org/sqlite（编译需 ≥4GB 内存）
 
-> 话务域（SIP/录音/IVR 实时流）按《实现文档_GoReact版》M2+ 接入 diago，本骨架先落业务闭环与数据链。
+> 话务域 M2 呼入已落地：真实 SIP 呼入 IVR（diago v0.32.2，Go ≥1.23）；外呼腿/B2BUA/录音为待增量。
 
 ## 前端 web/（React 18 + Antd 5 + Vite 5）
 

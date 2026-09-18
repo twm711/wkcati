@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"nk3c/internal/store"
@@ -217,20 +216,11 @@ func (s *Service) StartCall(c *gin.Context) {
 		CallerNo string `json:"callerNo"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	f, nodes, err := s.flowNodes()
+	sid, cur, sess, err := s.startCore(body.CallerNo)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
 	}
-	sid := fmt.Sprintf("%x", time.Now().UnixNano())
-	callerNo := body.CallerNo
-	if callerNo == "" {
-		callerNo = "139" + sid[:8]
-	}
-	sess := &session{CallerNo: callerNo, Answers: map[string]string{}, Start: store.NowISO()}
-	sessions[sid] = sess
-	node := s.enter(nodes, nodes[f.Entry], sess)
-	sess.Current = node.ID
-	rinfo.GinOK(c, gin.H{"sessionId": sid, "callerNo": callerNo, "node": node,
+	rinfo.GinOK(c, gin.H{"sessionId": sid, "callerNo": sess.CallerNo, "node": cur,
 		"transcript": sess.Transcript, "answers": sess.Answers, "done": sess.Done, "outcome": sess.Outcome}, "呼入已接入")
 }
 
@@ -241,83 +231,43 @@ type inputReq struct {
 
 func (s *Service) Input(c *gin.Context) {
 	sid := c.Param("sid")
-	sess := sessions[sid]
-	if sess == nil {
+	if sess := sessions[sid]; sess == nil {
 		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）"); return
-	}
-	if sess.Done {
+	} else if sess.Done {
 		rinfo.GinFail(c, rinfo.CodeConflict, "通话已结束"); return
 	}
 	var req inputReq
 	if err := c.ShouldBindJSON(&req); err != nil {
 		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
 	}
-	_, nodes, err := s.flowNodes()
+	cur, sess, invalid, err := s.keyCore(sid, req.Key, req.Message)
+	if err == errSessionNotFound {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）"); return
+	}
+	if err == errSessionDone {
+		rinfo.GinFail(c, rinfo.CodeConflict, "通话已结束"); return
+	}
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
 	}
-	cur := nodes[sess.Current]
-	key := strings.TrimSpace(req.Key)
-	var nxt string
-	invalid := false
-	switch cur.Type {
-	case "menu":
-		v, ok := cur.Branches[key]
-		if !ok {
-			invalid = true
-		} else {
-			nxt = v
-		}
-	case "question":
-		v, ok := cur.Options[key]
-		if !ok {
-			invalid = true
-		} else {
-			tag := orDefault(cur.Tag, cur.ID)
-			sess.Answers[tag] = v
-			nxt = cur.Next
-		}
-	case "voicemail":
-		if key == "#" || req.Message != nil {
-			if req.Message != nil {
-				sess.Answers["留言"] = *req.Message
-			} else {
-				sess.Answers["留言"] = "(语音留言)"
-			}
-			nxt = cur.Next
-		} else {
-			invalid = true
-		}
-	default:
-		invalid = true
-	}
 	if invalid {
-		sess.Transcript = append(sess.Transcript, map[string]interface{}{"node": cur.ID, "type": "INVALID", "text": "按键 " + key + " 无效，请重听"})
 		rinfo.GinOK(c, gin.H{"sessionId": sid, "node": cur, "transcript": sess.Transcript, "answers": sess.Answers,
 			"done": false, "outcome": nil, "invalidKey": true}, "按键无效，已重播当前节点")
 		return
 	}
-	node := s.enter(nodes, nodes[nxt], sess)
-	sess.Current = node.ID
-	rinfo.GinOK(c, gin.H{"sessionId": sid, "node": node, "transcript": sess.Transcript, "answers": sess.Answers,
+	rinfo.GinOK(c, gin.H{"sessionId": sid, "node": cur, "transcript": sess.Transcript, "answers": sess.Answers,
 		"done": sess.Done, "outcome": sess.Outcome}, "ok")
 }
 
 func (s *Service) Hangup(c *gin.Context) {
 	sid := c.Param("sid")
-	sess := sessions[sid]
-	if sess == nil {
+	sess, err := s.hangupCore(sid)
+	if err == errSessionNotFound {
 		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）"); return
 	}
-	if sess.Done {
-		rinfo.GinOK(c, gin.H{"sessionId": sid, "outcome": sess.Outcome, "answers": sess.Answers}, "通话已结束")
-		return
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
 	}
-	sess.Done = true
-	if sess.Outcome == "" {
-		sess.Outcome = "ABANDONED"
-	}
-	s.finalize(sess)
 	rinfo.GinOK(c, gin.H{"sessionId": sid, "outcome": sess.Outcome, "answers": sess.Answers}, "主叫挂断，通话已落库")
 }
 
