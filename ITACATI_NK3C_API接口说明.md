@@ -142,3 +142,6 @@
 5. **兼容注意**：IE10+ 目标（若沿用 NK3C 前端规范【S6】）——响应避免使用 IE 不支持的 ES6+ 语法直接输出。
 
 > 数据库迁移：M3 的 `003_cti_extensions.sql`（Goose 兼容 Up/Down 标记）负责录音文件索引与答题质检时间字段的旧库增量升级。
+| GET | `/api/export/:pid/columns` | 导出列清单（headers/types） |
+
+导出文件接口支持 `cols=0,1,...` 列裁剪；web `/exports` 页面提供列选择与本地导出历史。

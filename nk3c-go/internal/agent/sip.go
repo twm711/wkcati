@@ -167,11 +167,16 @@ func (s *Service) answerCore(agentID, callID, questionID int64, optionIDs []int6
 				return &BizErr{"4001", fmt.Sprintf("数值超出范围 %v ~ %v", mnSafe(mn), mxSafe(mx))}
 			}
 		}
-		_, err = tx.Exec(`INSERT INTO ans_answer(sheet_id,question_id,option_ids,answer_text,numeric_value,answered_at)
+		upsert := `INSERT INTO ans_answer(sheet_id,question_id,option_ids,answer_text,numeric_value,answered_at)
 			VALUES(?,?,?,?,?,?)
 			ON CONFLICT(sheet_id,question_id) DO UPDATE SET option_ids=excluded.option_ids,
-			answer_text=excluded.answer_text,numeric_value=excluded.numeric_value,answered_at=excluded.answered_at`,
-			sheetID, questionID, optsJSON, answerText, nv, answeredAt)
+			answer_text=excluded.answer_text,numeric_value=excluded.numeric_value,answered_at=excluded.answered_at`
+		if s.db.Driver == "mysql" {
+			upsert = `INSERT INTO ans_answer(sheet_id,question_id,option_ids,answer_text,numeric_value,answered_at)
+				VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE option_ids=VALUES(option_ids),
+				answer_text=VALUES(answer_text),numeric_value=VALUES(numeric_value),answered_at=VALUES(answered_at)`
+		}
+		_, err = tx.Exec(upsert, sheetID, questionID, optsJSON, answerText, nv, answeredAt)
 		return err
 	})
 	return sheetID, answeredAt, err

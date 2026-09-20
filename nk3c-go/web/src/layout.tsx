@@ -4,6 +4,7 @@ import {
   CustomerServiceOutlined,
   DashboardOutlined,
   AppstoreOutlined,
+  ExportOutlined,
   FileDoneOutlined,
   AudioOutlined,
   LogoutOutlined,
@@ -57,6 +58,7 @@ export default function Layout() {
             { key: '/agent', icon: <CustomerServiceOutlined />, label: '坐席工作台' },
             { key: '/monitor', icon: <DashboardOutlined />, label: '监控墙 / 质检' },
             { key: '/projects', icon: <AppstoreOutlined />, label: '项目管理' },
+            { key: '/exports', icon: <ExportOutlined />, label: '导出中心' },
             { key: '/workorders', icon: <FileDoneOutlined />, label: '工单中心' },
             { key: '/ivr', icon: <AudioOutlined />, label: 'IVR 互动' },
           ]}

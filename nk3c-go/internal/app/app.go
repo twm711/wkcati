@@ -4,25 +4,25 @@ package app
 import (
 	"context"
 	"database/sql"
-	"net"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"nk3c/internal/agent"
 	"nk3c/internal/auth"
+	"nk3c/internal/export"
 	"nk3c/internal/ivr"
 	"nk3c/internal/media"
-	"nk3c/internal/export"
 	"nk3c/internal/monitor"
-	"nk3c/internal/realtime"
 	"nk3c/internal/project"
+	"nk3c/internal/realtime"
 	"nk3c/internal/store"
 	"nk3c/internal/workorder"
 	"nk3c/pkg/rinfo"
@@ -107,10 +107,12 @@ func Build(db *store.DB) *App {
 				err = db.QueryRow(`SELECT record_file FROM ivr_call_log WHERE id=?`, callID).Scan(&rec)
 			}
 			if err != nil || rec == "" {
-				rinfo.GinFail(c, rinfo.CodeNotFound, "无录音（未接通或未开启录音）"); return
+				rinfo.GinFail(c, rinfo.CodeNotFound, "无录音（未接通或未开启录音）")
+				return
 			}
 			if _, err := os.Stat(rec); err != nil {
-				rinfo.GinFail(c, rinfo.CodeNotFound, "录音文件已清理"); return
+				rinfo.GinFail(c, rinfo.CodeNotFound, "录音文件已清理")
+				return
 			}
 			c.Header("Content-Disposition", `inline; filename="recording-`+callID+`.wav"`)
 			c.File(rec)
@@ -146,13 +148,33 @@ func Build(db *store.DB) *App {
 	e.GET("/api/export/:pid/:format", a.AuthQuery(), func(c *gin.Context) {
 		pid, err := strconv.ParseInt(c.Param("pid"), 10, 64)
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeParam, "项目 ID 非法"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "项目 ID 非法")
+			return
 		}
 		mx, err := export.BuildMatrix(db, pid)
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
 		}
 		format := strings.ToLower(c.Param("format"))
+		if format == "columns" {
+			rinfo.GinOK(c, gin.H{"headers": mx.Headers, "types": mx.Types}, "导出列清单")
+			return
+		}
+		if raw := c.Query("cols"); raw != "" {
+			indexes := []int{}
+			for _, part := range strings.Split(raw, ",") {
+				i, e := strconv.Atoi(strings.TrimSpace(part))
+				if e == nil {
+					indexes = append(indexes, i)
+				}
+			}
+			if len(indexes) == 0 {
+				rinfo.GinFail(c, rinfo.CodeParam, "cols 无有效列")
+				return
+			}
+			mx = mx.SelectColumns(indexes)
+		}
 		if i := strings.LastIndex(format, "."); i >= 0 { // 兼容 /sheets.csv 与 /csv 两种写法
 			format = format[i+1:]
 		}
@@ -160,16 +182,21 @@ func Build(db *store.DB) *App {
 		var mime, ext string
 		switch format {
 		case "csv":
-			body, err = mx.CSV(); mime, ext = "text/csv; charset=utf-8", "csv"
+			body, err = mx.CSV()
+			mime, ext = "text/csv; charset=utf-8", "csv"
 		case "xlsx":
-			body, err = mx.XLSX(); mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+			body, err = mx.XLSX()
+			mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
 		case "sav":
-			body, err = mx.SAV(); mime, ext = "application/x-spss-sav", "sav"
+			body, err = mx.SAV()
+			mime, ext = "application/x-spss-sav", "sav"
 		default:
-			rinfo.GinFail(c, rinfo.CodeParam, "格式仅支持 csv/xlsx/sav"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "格式仅支持 csv/xlsx/sav")
+			return
 		}
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
 		}
 		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"nk3c-project-%d.%s\"", pid, ext))
 		c.Data(200, mime, body)
@@ -184,39 +211,46 @@ func (a *App) RegisterDial(o *media.OutboundCaller, bd media.BridgeDriver) {
 	a.apiGroup.POST("/agent/calls/:callId/dial", func(c *gin.Context) {
 		callID, err := strconv.ParseInt(c.Param("callId"), 10, 64)
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeParam, "callId 非法"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "callId 非法")
+			return
 		}
 		data, msg, err := o.Dial(c.Request.Context(), callID)
 		if err != nil {
 			var be *agent.BizErr
 			if errors.As(err, &be) {
-				rinfo.GinFail(c, be.Code, be.Msg); return
+				rinfo.GinFail(c, be.Code, be.Msg)
+				return
 			}
-			rinfo.GinFail(c, rinfo.CodeState, err.Error()); return
+			rinfo.GinFail(c, rinfo.CodeState, err.Error())
+			return
 		}
 		rinfo.GinOK(c, data, msg)
 	})
 	a.apiGroup.POST("/agent/calls/:callId/bridge", func(c *gin.Context) {
 		callID, err := strconv.ParseInt(c.Param("callId"), 10, 64)
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeParam, "callId 非法"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "callId 非法")
+			return
 		}
 		var body struct {
 			AgentURI string `json:"agentUri" binding:"required"`
 		}
 		if err := c.ShouldBindJSON(&body); err != nil {
-			rinfo.GinFail(c, rinfo.CodeParam, "agentUri 必填（host:port）"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "agentUri 必填（host:port）")
+			return
 		}
 		host, portS, err := net.SplitHostPort(body.AgentURI)
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeParam, "agentUri 格式应为 host:port"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "agentUri 格式应为 host:port")
+			return
 		}
 		port, _ := strconv.Atoi(portS)
 		// 阻塞至通话结束（真人通话时长；超 25s 视为演示超时）
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
 		defer cancel()
 		if err := o.Bridge(ctx, callID, bd, host, port); err != nil {
-			rinfo.GinFail(c, rinfo.CodeState, err.Error()); return
+			rinfo.GinFail(c, rinfo.CodeState, err.Error())
+			return
 		}
 		var sampleID int64
 		_ = a.DB.QueryRow(`SELECT sample_id FROM cti_call_record WHERE id=?`, callID).Scan(&sampleID)
@@ -236,7 +270,8 @@ func sheetList(db *store.DB) gin.HandlerFunc {
 		q += ` ORDER BY id DESC`
 		rows, err := db.Query(q, args...)
 		if err != nil {
-			rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
 		}
 		defer rows.Close()
 		out := []map[string]interface{}{}
@@ -258,12 +293,14 @@ func reportSingle(db *store.DB) gin.HandlerFunc {
 		qidS := c.Query("questionId")
 		qid, perr := strconv.ParseInt(qidS, 10, 64)
 		if perr != nil || qid <= 0 {
-			rinfo.GinFail(c, rinfo.CodeParam, "questionId 必填（整数）"); return
+			rinfo.GinFail(c, rinfo.CodeParam, "questionId 必填（整数）")
+			return
 		}
 		var title, qt string
 		var qnrID int64
 		if err := db.QueryRow(`SELECT title,q_type,qnr_id FROM qnr_question WHERE id=?`, qid).Scan(&title, &qt, &qnrID); err != nil {
-			rinfo.GinFail(c, rinfo.CodeNotFound, "题目不存在"); return
+			rinfo.GinFail(c, rinfo.CodeNotFound, "题目不存在")
+			return
 		}
 		counts := map[int64]int{}
 		rows, _ := db.Query(`SELECT a.option_ids, COUNT(*) FROM ans_answer a

@@ -53,11 +53,20 @@ func (m *Matrix) XLSX() ([]byte, error) {
 	_, _ = f.NewSheet(s2)
 	_ = f.SetCellValue(s2, "A1", "结果码")
 	_ = f.SetCellValue(s2, "B1", "份数")
-	rcCol := 5 // Headers 下标
+	rcCol := -1
+	for i, h := range m.Headers {
+		if h == "结果码" {
+			rcCol = i
+			break
+		}
+	}
 	dist := map[string]int{}
 	var order []string
 	for _, row := range m.Rows {
-		rc := row[rcCol]
+		rc := ""
+		if rcCol >= 0 && rcCol < len(row) {
+			rc = row[rcCol]
+		}
 		if _, ok := dist[rc]; !ok {
 			order = append(order, rc)
 		}
@@ -82,7 +91,7 @@ type savVar struct {
 	strW  int    // 0=数值；>0=字符串宽度（字节）
 }
 
-func i32(b []byte, v int32) { binary.LittleEndian.PutUint32(b, uint32(v)) }
+func i32(b []byte, v int32)   { binary.LittleEndian.PutUint32(b, uint32(v)) }
 func f64(b []byte, v float64) { binary.LittleEndian.PutUint64(b, math.Float64bits(v)) }
 
 func pad4(n int) int { return (n + 3) &^ 3 }
@@ -122,12 +131,12 @@ func (m *Matrix) SAV() ([]byte, error) {
 	var out bytes.Buffer
 	hdr := make([]byte, 116) // $FL2(4)+5×i32+8+9+8+64+3 = 116
 	copy(hdr[0:4], "$FL2")
-	i32(hdr[4:8], 2)             // layout
-	i32(hdr[8:12], int32(len(vars))) // nominal case size
-	i32(hdr[12:16], 0)           // compression=未压缩
-	i32(hdr[16:20], 0)           // weight
+	i32(hdr[4:8], 2)                    // layout
+	i32(hdr[8:12], int32(len(vars)))    // nominal case size
+	i32(hdr[12:16], 0)                  // compression=未压缩
+	i32(hdr[16:20], 0)                  // weight
 	i32(hdr[20:24], int32(len(m.Rows))) // ncases
-	f64(hdr[24:32], 100.0)       // bias
+	f64(hdr[24:32], 100.0)              // bias
 	now := time.Now()
 	copy(hdr[32:41], now.Format("02 Jan 06"))
 	copy(hdr[41:49], now.Format("15:04:05"))

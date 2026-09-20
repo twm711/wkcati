@@ -42,6 +42,12 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## 导出中心与 MySQL 方言演练（M3 第四增量）
+
+- web 新增 `/exports` 导出中心：项目/格式选择、列选择、CSV/XLSX/SAV 下载，浏览器本地保留最近 20 条导出历史。
+- `GET /api/export/:pid/columns` 返回可选列；导出支持 `?cols=0,1,...`。XLSX 结果码分布在裁剪列后仍正确。
+- 新增 `migrations/mysql/001_init.sql` 与 `003_cti_extensions.sql`（MySQL 8.0、InnoDB、utf8mb4）；答题 upsert 对 SQLite 使用 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。
+
 ## CTI 扩展列迁移（M3 第三增量）
 
 - `003_cti_extensions.sql` 将 `cti_call_record.record_file`、`ivr_call_log.record_file`、`ans_answer.aud_start/aud_end` 从核心表迁移中拆出，支持旧 SQLite 库增量升级。

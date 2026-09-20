@@ -9,6 +9,7 @@ import Login from './pages/Login'
 import Agent from './pages/Agent'
 import Monitor from './pages/Monitor'
 import Projects from './pages/Projects'
+import Export from './pages/Export'
 import Workorders from './pages/Workorders'
 import Ivr from './pages/Ivr'
 
@@ -23,6 +24,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/agent" element={<Agent />} />
               <Route path="/monitor" element={<Monitor />} />
               <Route path="/projects" element={<Projects />} />
+              <Route path="/exports" element={<Export />} />
               <Route path="/workorders" element={<Workorders />} />
               <Route path="/ivr" element={<Ivr />} />
             </Route>

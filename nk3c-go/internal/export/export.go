@@ -26,6 +26,34 @@ type Matrix struct {
 	Rows      [][]string
 }
 
+// SelectColumns 返回列裁剪后的副本，保持导出格式实现对原矩阵透明。
+func (m *Matrix) SelectColumns(indexes []int) *Matrix {
+	out := &Matrix{ProjectID: m.ProjectID, Headers: make([]string, 0, len(indexes)), Types: make([]int8, 0, len(indexes))}
+	for _, i := range indexes {
+		if i < 0 || i >= len(m.Headers) {
+			continue
+		}
+		out.Headers = append(out.Headers, m.Headers[i])
+		if i < len(m.Types) {
+			out.Types = append(out.Types, m.Types[i])
+		} else {
+			out.Types = append(out.Types, 0)
+		}
+	}
+	for _, row := range m.Rows {
+		r := make([]string, 0, len(indexes))
+		for _, i := range indexes {
+			if i >= 0 && i < len(row) {
+				r = append(r, row[i])
+			} else {
+				r = append(r, "")
+			}
+		}
+		out.Rows = append(out.Rows, r)
+	}
+	return out
+}
+
 // BuildMatrix 组装项目答卷明细（样本/客户/坐席/工号/结果码/版本/状态 + 逐题答案）
 func BuildMatrix(db *store.DB, projectID int64) (*Matrix, error) {
 	// ① 题目列（按问卷）
