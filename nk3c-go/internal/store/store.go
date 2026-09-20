@@ -3,8 +3,8 @@ package store
 
 import (
 	"database/sql"
-	"errors"
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -99,7 +99,25 @@ func (d *DB) Migrate(force bool) error {
 		if err != nil {
 			return err
 		}
-		if _, err := d.Exec(string(data)); err != nil {
+		if ver == "003" {
+			// 003 曾有部分字段随 001 初始表发布；升级旧库时允许重复列，
+			// 但其余错误仍必须中止，保证迁移不会静默损坏 schema。
+			clean := make([]string, 0)
+			for _, line := range strings.Split(string(data), "\n") {
+				if !strings.HasPrefix(strings.TrimSpace(line), "--") {
+					clean = append(clean, line)
+				}
+			}
+			for _, stmt := range strings.Split(strings.Join(clean, "\n"), ";") {
+				stmt = strings.TrimSpace(stmt)
+				if stmt == "" {
+					continue
+				}
+				if _, err := d.Exec(stmt); err != nil && !strings.Contains(strings.ToLower(err.Error()), "duplicate column name") {
+					return fmt.Errorf("迁移 %s 失败: %w", ver, err)
+				}
+			}
+		} else if _, err := d.Exec(string(data)); err != nil {
 			return fmt.Errorf("迁移 %s 失败: %w", ver, err)
 		}
 		if _, err := d.Exec(`INSERT INTO schema_migrations VALUES(?,?)`, ver, time.Now().UTC().Format(time.RFC3339)); err != nil {

@@ -42,6 +42,11 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## CTI 扩展列迁移（M3 第三增量）
+
+- `003_cti_extensions.sql` 将 `cti_call_record.record_file`、`ivr_call_log.record_file`、`ans_answer.aud_start/aud_end` 从核心表迁移中拆出，支持旧 SQLite 库增量升级。
+- 迁移文件采用 Goose 兼容的 `-- +goose Up/Down` 标记；内置迁移器按版本顺序执行，旧库已存在字段时仅忽略重复列错误。
+
 ## 质检事件流与强签（M3 第二增量）
 
 - `GET /api/qc/ws?token=`（**仅 groupAdmin**，升级前 403）：督导订阅坐席动作事件，帧 `{"type":"qc","event":"DIAL|ANSWER|RESULT|FORCE_LOGOUT","data":{agentNo,userId,callId,sampleId,...},"ts":ms}`，事件驱动即推（无订阅者零开销）。

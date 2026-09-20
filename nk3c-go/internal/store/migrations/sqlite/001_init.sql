@@ -23,21 +23,21 @@ CREATE TABLE smp_blacklist(id INTEGER PRIMARY KEY, phone_no TEXT UNIQUE, scope T
 CREATE TABLE smp_status_code(code TEXT PRIMARY KEY, name TEXT, category TEXT,
   closes_call INTEGER, reopen_sample INTEGER, hit_black_flag INTEGER);
 CREATE TABLE cti_call_record(id INTEGER PRIMARY KEY, project_id INTEGER, sample_id INTEGER,
-  agent_id INTEGER, agent_no TEXT, caller_no TEXT, called_no TEXT, status TEXT, record_file TEXT,
+  agent_id INTEGER, agent_no TEXT, caller_no TEXT, called_no TEXT, status TEXT,
   begin_time TEXT, connect_time TEXT, end_time TEXT, result_code TEXT);
 CREATE TABLE ans_sheet(id INTEGER PRIMARY KEY, call_id INTEGER UNIQUE, project_id INTEGER,
   sample_id INTEGER, agent_id INTEGER, qnr_id INTEGER, qnr_version TEXT,
   status TEXT DEFAULT 'DOING', audit_remark TEXT);
 CREATE TABLE ans_answer(id INTEGER PRIMARY KEY, sheet_id INTEGER, question_id INTEGER,
   option_ids TEXT, answer_text TEXT, numeric_value REAL, answered_at TEXT,
-  aud_start REAL, aud_end REAL, UNIQUE(sheet_id, question_id));
+  UNIQUE(sheet_id, question_id));
 CREATE TABLE wko_ticket(id INTEGER PRIMARY KEY, project_id INTEGER, call_id INTEGER,
   caller_no TEXT, subject TEXT, detail TEXT, status TEXT DEFAULT 'PENDING',
   assigned_agent_id INTEGER, priority TEXT DEFAULT 'NORMAL', remark TEXT,
   created_at TEXT, accepted_at TEXT, resolved_at TEXT, closed_at TEXT, revisit_sample_id INTEGER);
 CREATE TABLE ivr_flow(id INTEGER PRIMARY KEY, name TEXT, flow_json TEXT, updated_at TEXT);
 CREATE TABLE ivr_call_log(id INTEGER PRIMARY KEY, caller_no TEXT, start_time TEXT,
-  end_time TEXT, outcome TEXT, path_json TEXT, answers_json TEXT, record_file TEXT);
+  end_time TEXT, outcome TEXT, path_json TEXT, answers_json TEXT);
 
 -- ── 种子 ──
 INSERT INTO sys_user VALUES(1,'admin','123456','系统管理员',NULL,'domainAdmin,orgAdmin,groupAdmin,phoneAdmin',1);
