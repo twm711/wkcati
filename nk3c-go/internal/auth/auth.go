@@ -110,6 +110,22 @@ func (s *Service) HasRole(u *User, roles ...string) bool {
 	return false
 }
 
+// AuthQuery 双通道鉴权：?token= 优先（WebSocket/window.open 无法带头），回退 Authorization 头
+func (s *Service) AuthQuery() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		u := s.user(c.Query("token"))
+		if u == nil {
+			u = s.user(bearer(c))
+		}
+		if u == nil {
+			c.AbortWithStatus(401)
+			return
+		}
+		c.Set("user", u)
+		c.Next()
+	}
+}
+
 // RequireAuth 鉴权中间件：user 注入 context
 func (s *Service) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {

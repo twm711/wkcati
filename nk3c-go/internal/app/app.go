@@ -7,7 +7,9 @@ import (
 	"net"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"strconv"
 	"time"
 
@@ -17,7 +19,9 @@ import (
 	"nk3c/internal/auth"
 	"nk3c/internal/ivr"
 	"nk3c/internal/media"
+	"nk3c/internal/export"
 	"nk3c/internal/monitor"
+	"nk3c/internal/realtime"
 	"nk3c/internal/project"
 	"nk3c/internal/store"
 	"nk3c/internal/workorder"
@@ -122,6 +126,45 @@ func Build(db *store.DB) *App {
 	}
 
 	app := &App{DB: db, Auth: a, Engine: e, apiGroup: api}
+	app.apiGroup = api
+
+	// 监控墙 WebSocket（?token= 鉴权；2s 推送墙面快照）
+	hub := realtime.NewHub(mo.BuildWall)
+	e.GET("/api/ws/monitor", a.AuthQuery(), func(c *gin.Context) {
+		hub.ServeWS(c.Writer, c.Request)
+	})
+	// 导出中心（?token= 鉴权；window.open 场景）
+	e.GET("/api/export/:pid/:format", a.AuthQuery(), func(c *gin.Context) {
+		pid, err := strconv.ParseInt(c.Param("pid"), 10, 64)
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeParam, "项目 ID 非法"); return
+		}
+		mx, err := export.BuildMatrix(db, pid)
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		}
+		format := strings.ToLower(c.Param("format"))
+		if i := strings.LastIndex(format, "."); i >= 0 { // 兼容 /sheets.csv 与 /csv 两种写法
+			format = format[i+1:]
+		}
+		var body []byte
+		var mime, ext string
+		switch format {
+		case "csv":
+			body, err = mx.CSV(); mime, ext = "text/csv; charset=utf-8", "csv"
+		case "xlsx":
+			body, err = mx.XLSX(); mime, ext = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+		case "sav":
+			body, err = mx.SAV(); mime, ext = "application/x-spss-sav", "sav"
+		default:
+			rinfo.GinFail(c, rinfo.CodeParam, "格式仅支持 csv/xlsx/sav"); return
+		}
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		}
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"nk3c-project-%d.%s\"", pid, ext))
+		c.Data(200, mime, body)
+	})
 	return app
 }
 

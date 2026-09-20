@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Card, Table, Tag, Button, Space, Drawer, Descriptions, App, Modal, Input, Select, InputNumber, Typography, Statistic, Form, Popconfirm } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { api, hasRole, type RInfo } from '../api'
+import { api, hasRole, rawSession, type RInfo } from '../api'
 
 interface Proj {
   projectId: number; projectCode: string; name: string; status: string
@@ -197,6 +197,7 @@ export default function Projects() {
                   <Button onClick={() => setQuotaOpen(true)}>设置配额</Button>
                 </>
               )}
+              <ExportButtons projectId={detail.projectId} />
             </Space>
             <Card size="small" title={`题目（${detail.questions.length}）`}>
               {detail.questions.map((q) => (
@@ -311,5 +312,22 @@ export default function Projects() {
         )}
       </Modal>
     </Card>
+  )
+}
+
+// 导出中心按钮：?token= 直链下载（window.open 无法带 Authorization 头）
+export function ExportButtons({ projectId }: { projectId: number }) {
+  const { message } = App.useApp()
+  const dl = (fmt: 'csv' | 'xlsx' | 'sav') => {
+    const s = rawSession()
+    if (!s) { message.error('会话已过期，请重新登录'); return }
+    window.open(`/api/export/${projectId}/sheets.${fmt}?token=${encodeURIComponent(s.sessionId)}`, '_blank')
+  }
+  return (
+    <Space.Compact>
+      <Button onClick={() => dl('csv')}>导出 CSV</Button>
+      <Button onClick={() => dl('xlsx')}>XLSX</Button>
+      <Button onClick={() => dl('sav')}>SPSS</Button>
+    </Space.Compact>
   )
 }

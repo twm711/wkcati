@@ -35,6 +35,13 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 > 话务域 M2 收官：呼入 IVR、外呼自动调研、B2BUA 坐席桥接（`POST /api/agent/calls/:id/bridge`，body `{agentUri}`）、录音落盘/回放、flow 热更均已落地（diago v0.32.2，Go ≥1.23）。外呼需 `--outbound host:port` 指向被叫/中继。
 
+## 导出中心与实时推送（M3 第一增量）
+
+- `GET /api/export/:pid/:format`（format=csv|xlsx|sav，亦接受 `/sheets.csv` 段式）：CSV 带 UTF-8 BOM；XLSX 双工作表（答卷明细+结果码分布）；**SAV**（SPSS 系统文件：数值题落数值变量、其余宽 32 字符串、record7 subtype13 长名 + subtype20 UTF-8 声明）。鉴权双通道：`?token=` 或 Authorization 头；`Content-Disposition: attachment; nk3c-project-<pid>.<ext>`。
+- `GET /api/ws/monitor?token=`：WebSocket 监控墙推送，帧 `{"type":"wall","data":<监控墙>,"ts":ms}`，周期 2s；web 端优先 WS，失败自动降级 5s 轮询（Monitor 页状态标签）。
+- web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
+- E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
+
 ## 前端 web/（React 18 + Antd 5 + Vite 5）
 
 ```bash

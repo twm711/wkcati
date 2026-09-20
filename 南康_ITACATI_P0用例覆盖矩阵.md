@@ -33,7 +33,7 @@
 | 27 | M09 答卷管理 | 录音-答卷联动审核 | ✅已自动化 | test_19 | 录音地标 offset 与合成 WAV 逐题一致 + Live 波形播放同步高亮 |
 | 28 | M09 答卷管理 | 审核状态流转 | ✅已自动化 | test_06/07 | SUBMITTED→AUDITED/REJECTED；驳回样本回池生成重访 |
 | 29 | M10 统计报表 | 单题统计实时与一致 | ✅已自动化 | test_02/25 | 频数实时（SUBMITTED+AUDITED 口径）；SPSS 值对账未做 |
-| 30 | M11 数据导出 | SPSS导出元数据 | ▢规划 |  | demo 导出 CSV/XLSX（test_14）；Quantum/SPSS/Txt 元数据未实现 |
+| 30 | M11 数据导出 | SPSS导出元数据 | ✅已自动化 | TestExportCSV/XLSX/SAV、TestMonitorWebSocket | SAV 系统文件（$FL2 头/rec7 长名+UTF-8/数值题数值变量）由逐记录解析测试钉死；监控墙 WS 2s 推送 |
 | 31 | M11 数据导出 | 导出审批与审计 | ◐部分 | test_14 | 导出权限 4032；导出审批流与审计表未做 |
 | 32 | M12 质检管理 | 按比例抽检 | ▢规划 |  | 按比例抽检生成待检列表未实现 |
 | 33 | M12 质检管理 | 致命缺陷一票否决 | ▢规划 |  | 质检评分/缺陷标志未实现 |

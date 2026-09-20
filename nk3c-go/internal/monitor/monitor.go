@@ -11,7 +11,8 @@ type Service struct{ db *store.DB }
 
 func New(db *store.DB) *Service { return &Service{db: db} }
 
-func (s *Service) Wall(c *gin.Context) {
+// BuildWall 墙面快照（HTTP 与 WS Hub 共用）
+func (s *Service) BuildWall() map[string]interface{} {
 	agents := []map[string]interface{}{}
 	base := []struct {
 		uid          int64
@@ -54,8 +55,12 @@ func (s *Service) Wall(c *gin.Context) {
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE substr(begin_time,1,10)=?`, today).Scan(&dial)
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE connect_time IS NOT NULL`).Scan(&conn)
 	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE result_code='SUCCESS'`).Scan(&succ)
-	rinfo.GinOK(c, gin.H{"agents": agents, "summary": gin.H{
-		"dialCount": dial, "connectCount": conn, "successCount": succ, "abandonCount": 0}}, "ok")
+	return map[string]interface{}{"agents": agents, "summary": gin.H{
+		"dialCount": dial, "connectCount": conn, "successCount": succ, "abandonCount": 0}}
+}
+
+func (s *Service) Wall(c *gin.Context) {
+	rinfo.GinOK(c, s.BuildWall(), "ok")
 }
 
 func (s *Service) Calls(c *gin.Context) {

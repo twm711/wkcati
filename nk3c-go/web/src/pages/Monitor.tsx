@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card, Statistic, Row, Col, Tag, Table, Button, App, Input, Space, Typography, Modal } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
-import { api, hasRole } from '../api'
+import { ReloadOutlined, WifiOutlined, LinkOutlined } from '@ant-design/icons'
+import { api, hasRole, rawSession } from '../api'
 
 interface WallAgent { agentNo: string; userName: string; state: string; sampleId: unknown; callId: unknown }
 interface Wall { agents: WallAgent[]; summary: { dialCount: number; connectCount: number; successCount: number; abandonCount: number } }
+interface WallFrame { type: string; data: Wall; ts: number }
 interface CallRow { id: number; sample_id: unknown; cust_name: unknown; agent_no: string; status: string; result_code: unknown; begin_time: string; connect_time: unknown }
 interface SheetRow { id: number; call_id: number; project_id: number; sample_id: number; agent_id: number; qnr_id: number; qnr_version: string; status: string; audit_remark: string }
 
@@ -16,19 +17,48 @@ export default function Monitor() {
   const [calls, setCalls] = useState<CallRow[]>([])
   const [sheets, setSheets] = useState<SheetRow[]>([])
   const [auditTarget, setAuditTarget] = useState<{ row: SheetRow; action: 'PASS' | 'REJECT' } | null>(null)
+  const [wsLive, setWsLive] = useState(false)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
   const canAudit = hasRole('groupAdmin')
 
+  // 轮询兜底：话务流水/审核队列无 WS 推送，墙面则优先走 WS
   const load = useCallback(async () => {
-    const w = await api.get<Wall>('/api/monitor/wall')
-    if (w.success) setWall(w.data)
+    if (!wsLive) {
+      const w = await api.get<Wall>('/api/monitor/wall')
+      if (w.success) setWall(w.data)
+    }
     const c = await api.get<CallRow[]>('/api/monitor/calls?limit=12')
     if (c.success) setCalls(c.data as unknown as CallRow[])
     if (canAudit) {
       const s = await api.get<{ total: number; rows: SheetRow[] }>('/api/sheet?status=SUBMITTED')
       if (s.success) setSheets(s.data.rows)
     }
-  }, [canAudit])
+  }, [canAudit, wsLive])
+
+  // 监控墙 WebSocket（?token= 鉴权，失败自动降级 5s 轮询）
+  useEffect(() => {
+    const s = rawSession()
+    if (!s) return
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    let closed = false
+    const ws = new WebSocket(`${proto}://${location.host}/api/ws/monitor?token=${encodeURIComponent(s.sessionId)}`)
+    wsRef.current = ws
+    ws.onopen = () => { if (!closed) setWsLive(true) }
+    ws.onmessage = (ev) => {
+      try {
+        const frame = JSON.parse(ev.data as string) as WallFrame
+        if (frame.type === 'wall') setWall(frame.data)
+      } catch { /* 忽略坏帧 */ }
+    }
+    ws.onclose = () => { if (!closed) setWsLive(false) }
+    ws.onerror = () => { if (!closed) setWsLive(false) }
+    return () => {
+      closed = true
+      ws.close()
+      wsRef.current = null
+    }
+  }, [])
 
   useEffect(() => {
     load()
@@ -57,7 +87,14 @@ export default function Monitor() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Card
-        title="实时监控墙（5s 轮询）"
+        title={
+          <Space>
+            监控墙
+            <Tag color={wsLive ? 'green' : 'orange'} icon={wsLive ? <WifiOutlined /> : <LinkOutlined />}>
+              {wsLive ? 'WebSocket 实时推送' : '5s 轮询'}
+            </Tag>
+          </Space>
+        }
         extra={<Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>}
       >
         <Row gutter={16} style={{ marginBottom: 16 }}>
