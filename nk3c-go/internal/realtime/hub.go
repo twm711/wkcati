@@ -16,7 +16,6 @@ type PayloadFn func() map[string]interface{}
 
 type client struct {
 	conn *websocket.Conn
-	send chan []byte
 }
 
 // Hub 客户端注册表 + 2s 周期广播
@@ -44,7 +43,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("WS 升级失败", "err", err)
 		return
 	}
-	cl := &client{conn: c, send: make(chan []byte, 8)}
+	cl := &client{conn: c}
 	h.mu.Lock()
 	h.clients[cl] = struct{}{}
 	n := len(h.clients)
@@ -89,15 +88,3 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Broadcast 立即向全部客户端广播（事件驱动场景预留）
-func (h *Hub) Broadcast(v interface{}) {
-	b, _ := json.Marshal(v)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	for cl := range h.clients {
-		select {
-		case cl.send <- b:
-		default: // 背压丢弃
-		}
-	}
-}

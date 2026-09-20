@@ -3,13 +3,77 @@ package monitor
 
 import (
 	"github.com/gin-gonic/gin"
+	"nk3c/internal/auth"
+	"nk3c/internal/realtime"
 	"nk3c/internal/store"
 	"nk3c/pkg/rinfo"
 )
 
-type Service struct{ db *store.DB }
+// SessionKiller 强签会话吊销能力（auth.Service 满足；接口隔离避免包耦合）
+type SessionKiller interface {
+	LogoutAll(userID int64) int
+}
+
+type Service struct {
+	db       *store.DB
+	qcHub    *realtime.EventHub
+	sessions SessionKiller
+}
 
 func New(db *store.DB) *Service { return &Service{db: db} }
+
+// WireQC 装配质检事件 Hub 与会话吊销器（app.Build 接线）
+func (s *Service) WireQC(hub *realtime.EventHub, sk SessionKiller) {
+	s.qcHub, s.sessions = hub, sk
+}
+
+// ServeQCWS 督导质检事件流：仅 groupAdmin 可订阅（403 不升级）
+func (s *Service) ServeQCWS(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin") {
+		// WS 升级前拦截用真实 HTTP 状态（与 401 同语义；客户端握手即失败）
+		c.AbortWithStatus(403)
+		return
+	}
+	s.qcHub.ServeWS(c.Writer, c.Request)
+}
+
+type forceCheckoutReq struct {
+	UserID int64 `json:"userId" binding:"required"`
+}
+
+// ForceCheckout 强签坐席：注销全部会话 + 释放占用样本（ASSIGNED/INCALL → IDLE 回池）+ 广播事件
+func (s *Service) ForceCheckout(c *gin.Context) {
+	op := auth.From(c)
+	if op == nil || !auth.HasRoleP(op, "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "仅督导可执行强签")
+		return
+	}
+	var req forceCheckoutReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+	}
+	var agentNo string
+	var agentID int64
+	if err := s.db.QueryRow(`SELECT id,COALESCE(agent_no,'') FROM sys_user WHERE id=?`, req.UserID).Scan(&agentID, &agentNo); err != nil {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "目标用户不存在"); return
+	}
+	var released int64
+	// 释放样本（ASSIGNED=外呼中；INCALL=桥接通话中 → 回 IDLE 池）
+	res, err := s.db.Exec(`UPDATE smp_sample SET status='IDLE', owner_agent_id=NULL
+		WHERE owner_agent_id=? AND status IN ('ASSIGNED','INCALL')`, req.UserID)
+	if err == nil {
+		n, _ := res.RowsAffected()
+		released = n
+	}
+	killed := 0
+	if s.sessions != nil {
+		killed = s.sessions.LogoutAll(req.UserID)
+	}
+	s.qcHub.Publish("FORCE_LOGOUT", gin.H{"targetUserId": req.UserID, "targetAgentNo": agentNo,
+		"releasedSamples": released, "sessions": killed, "byUserId": op.ID, "byAgentNo": op.AgentNo})
+	rinfo.GinOK(c, gin.H{"sessions": killed, "releasedSamples": released}, "已强签 "+agentNo)
+}
 
 // BuildWall 墙面快照（HTTP 与 WS Hub 共用）
 func (s *Service) BuildWall() map[string]interface{} {
@@ -48,7 +112,7 @@ func (s *Service) BuildWall() map[string]interface{} {
 			}
 		}
 		agents = append(agents, map[string]interface{}{"agentNo": agentNo, "userName": name, "state": state,
-			"sampleId": sampleID, "callId": callID})
+			"sampleId": sampleID, "callId": callID, "userId": uid})
 	}
 	today := store.NowISO()[:10]
 	var dial, conn, succ int

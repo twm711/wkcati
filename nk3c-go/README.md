@@ -42,6 +42,14 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## 质检事件流与强签（M3 第二增量）
+
+- `GET /api/qc/ws?token=`（**仅 groupAdmin**，升级前 403）：督导订阅坐席动作事件，帧 `{"type":"qc","event":"DIAL|ANSWER|RESULT|FORCE_LOGOUT","data":{agentNo,userId,callId,sampleId,...},"ts":ms}`，事件驱动即推（无订阅者零开销）。
+- `POST /api/qc/force-checkout` body `{"userId":n}`（仅 groupAdmin）：强签=注销目标全部会话 + 释放占用样本（ASSIGNED/INCALL→IDLE 回池）+ FORCE_LOGOUT 广播。
+- 事件同步落 `cti_monitor_event`（迁移 002，迁移器已泛化为多版本顺序应用）。
+- web：监控墙坐席卡「强签」按钮（督导可见，Popconfirm 二次确认）。
+- E2E：`internal/app/qc_test.go` ×2（DIAL→ANSWER→RESULT 三帧+落库+403 守门；强签=会话吊销+样本回池+FORCE_LOGOUT 帧+非督导 403）。【对应 P0 test_17/18】
+
 ## 前端 web/（React 18 + Antd 5 + Vite 5）
 
 ```bash

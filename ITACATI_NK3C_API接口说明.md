@@ -73,6 +73,8 @@
 
 | GET | `/api/export/:pid/:format` | 导出答卷（csv/xlsx/sav；?token= 或 Bearer） |
 | GET | `/api/ws/monitor?token=` | 监控墙 WebSocket 推送（2s 周期 wall 帧） |
+| GET | `/api/qc/ws?token=` | 质检事件流（仅督导；DIAL/ANSWER/RESULT/FORCE_LOGOUT 帧） |
+| POST | `/api/qc/force-checkout` | 强签坐席（仅督导；吊销会话+样本回池） |
 
 ## 3. 关键交互 → 接口映射（原型对照）
 

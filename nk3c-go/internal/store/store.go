@@ -76,20 +76,37 @@ func (d *DB) Migrate(force bool) error {
 	if _, err := d.Exec("CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT)"); err != nil {
 		return err
 	}
-	var done string
-	_ = d.QueryRow("SELECT version FROM schema_migrations WHERE version=?", "001").Scan(&done)
-	if done == "001" {
-		return nil
-	}
-	data, err := sqliteMigrations.ReadFile("migrations/sqlite/001_init.sql")
+	// 顺序应用未执行的迁移版本（goose 语义子集：文件名=版本号，单文件单事务语义由外层保证）
+	entries, err := sqliteMigrations.ReadDir("migrations/sqlite")
 	if err != nil {
 		return err
 	}
-	if _, err := d.Exec(string(data)); err != nil {
-		return fmt.Errorf("迁移 001 失败: %w", err)
+	for _, ent := range entries {
+		name := ent.Name()
+		if ent.IsDir() || !strings.HasSuffix(name, ".sql") {
+			continue
+		}
+		ver := strings.TrimSuffix(name, ".sql")
+		if i := strings.IndexByte(ver, '_'); i >= 0 {
+			ver = ver[:i]
+		}
+		var done string
+		_ = d.QueryRow(`SELECT version FROM schema_migrations WHERE version=?`, ver).Scan(&done)
+		if done == ver {
+			continue
+		}
+		data, err := sqliteMigrations.ReadFile("migrations/sqlite/" + name)
+		if err != nil {
+			return err
+		}
+		if _, err := d.Exec(string(data)); err != nil {
+			return fmt.Errorf("迁移 %s 失败: %w", ver, err)
+		}
+		if _, err := d.Exec(`INSERT INTO schema_migrations VALUES(?,?)`, ver, time.Now().UTC().Format(time.RFC3339)); err != nil {
+			return err
+		}
 	}
-	_, err = d.Exec("INSERT INTO schema_migrations VALUES('001',?)", time.Now().UTC().Format(time.RFC3339))
-	return err
+	return nil
 }
 
 // ErrAbort 业务哨兵：fn 已自行写响应，事务应提交而非回滚

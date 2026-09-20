@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Card, Statistic, Row, Col, Tag, Table, Button, App, Input, Space, Typography, Modal } from 'antd'
+import { Card, Statistic, Row, Col, Tag, Table, Button, App, Input, Space, Typography, Modal, Popconfirm } from 'antd'
 import { ReloadOutlined, WifiOutlined, LinkOutlined } from '@ant-design/icons'
 import { api, hasRole, rawSession } from '../api'
 
-interface WallAgent { agentNo: string; userName: string; state: string; sampleId: unknown; callId: unknown }
+interface WallAgent { agentNo: string; userName: string; state: string; sampleId: unknown; callId: unknown; userId?: number }
 interface Wall { agents: WallAgent[]; summary: { dialCount: number; connectCount: number; successCount: number; abandonCount: number } }
 interface WallFrame { type: string; data: Wall; ts: number }
 interface CallRow { id: number; sample_id: unknown; cust_name: unknown; agent_no: string; status: string; result_code: unknown; begin_time: string; connect_time: unknown }
@@ -68,6 +68,17 @@ export default function Monitor() {
     }
   }, [load])
 
+  const forceCheckout = async (userId: number, agentNo: string) => {
+    try {
+      const r = await api.post<{ sessions: number; releasedSamples: number }>('/api/qc/force-checkout', { userId })
+      if (!r.success) throw new Error(r.message)
+      message.success(`已强签 ${agentNo}：吊销会话 ${r.data.sessions} 个，样本回池 ${r.data.releasedSamples} 个`)
+      load()
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '强签失败')
+    }
+  }
+
   const doAudit = async (remark: string) => {
     if (!auditTarget) return
     try {
@@ -114,6 +125,15 @@ export default function Monitor() {
                   </Space>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>{a.userName}</Typography.Text>
                   {a.sampleId != null && <Typography.Text style={{ fontSize: 12 }}>样本 #{String(a.sampleId)}</Typography.Text>}
+                  {canAudit && a.userId != null && (
+                    <Popconfirm
+                      title={`强签 ${a.agentNo}？`}
+                      description="注销其全部会话，占用样本回池（INCALL/ASSIGNED → IDLE）"
+                      onConfirm={() => forceCheckout(a.userId as number, a.agentNo)}
+                    >
+                      <Button size="small" danger style={{ marginTop: 4 }}>强签</Button>
+                    </Popconfirm>
+                  )}
                 </Space>
               </Card>
             </Col>

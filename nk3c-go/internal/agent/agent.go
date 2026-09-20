@@ -15,11 +15,47 @@ import (
 	"nk3c/pkg/rinfo"
 )
 
+// Notifier 质检事件通知（realtime.EventHub 满足该接口；未注入=静默）
+type Notifier interface {
+	Publish(event string, data map[string]interface{})
+}
+
 type Service struct {
-	db *store.DB
+	db       *store.DB
+	notifier Notifier
 }
 
 func New(db *store.DB) *Service { return &Service{db: db} }
+
+// SetNotifier 装配质检事件发布器（app.Build 接线）
+func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
+
+// publishQC 事件落库（cti_monitor_event）+ 广播督导（尽力而为，不阻塞主流程）
+func (s *Service) publishQC(u *auth.User, event string, callID, sampleID int64, detail string, extra map[string]interface{}) {
+	if s.notifier == nil {
+		return
+	}
+	data := map[string]interface{}{"agentNo": "", "userId": int64(0)}
+	if u != nil {
+		data["agentNo"] = u.AgentNo
+		data["userId"] = u.ID
+	}
+	if callID != 0 {
+		data["callId"] = callID
+	}
+	if sampleID != 0 {
+		data["sampleId"] = sampleID
+	}
+	if detail != "" {
+		data["detail"] = detail
+	}
+	for k, v := range extra {
+		data[k] = v
+	}
+	_, _ = s.db.Exec(`INSERT INTO cti_monitor_event(agent_id,agent_no,event,call_id,sample_id,detail,created_at)
+		VALUES(?,?,?,?,?,?,?)`, data["userId"], data["agentNo"], event, callID, sampleID, detail, store.NowISO())
+	s.notifier.Publish(event, data)
+}
 
 func param(tx *sql.Tx, code, def string) string {
 	var v string
@@ -34,6 +70,8 @@ func param(tx *sql.Tx, code, def string) string {
 func (s *Service) Dispatch(c *gin.Context) {
 	u := auth.From(c)
 	projectID := c.DefaultQuery("projectId", "1")
+	var okCall, okSample int64
+	var okName string
 	// 主事务：串行化取样（生产 MySQL 为 SELECT ... FOR UPDATE SKIP LOCKED）
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var pstatus string
@@ -128,10 +166,14 @@ func (s *Service) Dispatch(c *gin.Context) {
 		rinfo.GinOK(c, gin.H{"callId": callID, "sampleId": sid, "custName": custName,
 			"attempts": attempts, "phones": phones, "currentPhone": phone,
 			"questionnaire": gin.H{"questionnaireId": qid, "title": qtitle, "version": qver, "questions": qs}}, "派样成功")
+		okCall, okSample, okName = callID, sid, custName // 事件在事务提交后发布（单连接池红线 #5）
 		return errAbort
 	})
 	if err != nil && err != errAbort {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+	}
+	if okCall != 0 {
+		s.publishQC(u, "DIAL", okCall, okSample, okName, nil)
 	}
 }
 
@@ -170,6 +212,7 @@ func (s *Service) Answer(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
 	}
 	rinfo.GinOK(c, gin.H{"sheetId": sheetID, "answeredAt": answeredAt}, "答案已实时入库（断点续答依据）")
+	s.publishQC(u, "ANSWER", req.CallID, 0, "", gin.H{"sheetId": sheetID, "questionId": req.QuestionID})
 }
 
 type resultReq struct {
@@ -199,6 +242,9 @@ func (s *Service) Result(c *gin.Context) {
 		return
 	}
 	rinfo.GinOK(c, data, msg)
+	sid, _ := data["sampleId"].(int64)
+	dest, _ := data["destination"].(string)
+	s.publishQC(u, "RESULT", req.CallID, sid, req.ResultCode, gin.H{"sampleDest": dest})
 }
 
 // tryConsumeQuota 配额原子扣减：UPDATE ... WHERE done<target（0 行=满格 overflow）

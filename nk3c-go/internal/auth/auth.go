@@ -99,6 +99,20 @@ func (s *Service) user(tok string) *User {
 	return &u
 }
 
+// LogoutAll 强签：注销某用户全部会话，返回吊销数（督导强签坐席用）
+func (s *Service) LogoutAll(userID int64) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for tok, uid := range s.sessions {
+		if uid == userID {
+			delete(s.sessions, tok)
+			n++
+		}
+	}
+	return n
+}
+
 func (s *Service) HasRole(u *User, roles ...string) bool {
 	for _, have := range u.Roles {
 		for _, want := range roles {
