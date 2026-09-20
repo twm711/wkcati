@@ -38,7 +38,7 @@ type App struct {
 func Build(db *store.DB) *App {
 	gin.SetMode(gin.ReleaseMode)
 	e := gin.New()
-	e.Use(gin.Logger(), gin.Recovery())
+	e.Use(gin.Logger(), gin.Recovery(), auditMiddleware(db))
 
 	a := auth.New(db)
 	p := project.New(db)

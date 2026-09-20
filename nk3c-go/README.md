@@ -42,6 +42,12 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## 操作审计基础（M3 第七增量）
+
+- 新增 `sys_op_log` SQLite/MySQL 迁移；统一中间件记录业务写操作及导出/录音访问。
+- 审计只保存用户、方法、路径、状态码和时间，不保存请求体，避免复制客户电话/答案等 PII。
+- 审计写失败不覆盖原业务响应；生产仍需补审批、查询权限、留存和归档策略。
+
 ## 导出中心与 MySQL 方言演练（M3 第四增量）
 
 - web 新增 `/exports` 导出中心：项目/格式选择、列选择、CSV/XLSX/SAV 下载，浏览器本地保留最近 20 条导出历史。

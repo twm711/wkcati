@@ -145,3 +145,5 @@
 | GET | `/api/export/:pid/columns` | 导出列清单（headers/types） |
 
 导出文件接口支持 `cols=0,1,...` 列裁剪；web `/exports` 页面提供列选择与本地导出历史。
+
+> 审计：认证后的写操作及导出/录音访问由 `sys_op_log` 中间件记录方法、路径、用户和状态码；请求体不入审计表。
