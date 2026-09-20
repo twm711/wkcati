@@ -16,6 +16,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"nk3c/internal/agent"
 	"nk3c/internal/app"
 	"nk3c/internal/ivr"
 	"nk3c/internal/media"
@@ -68,7 +69,7 @@ func main() {
 				srv.Outbound.OnRecorded = func(callID int64, path string) {
 					_, _ = db.Exec(`UPDATE cti_call_record SET record_file=? WHERE id=?`, path, callID)
 				}
-				a.RegisterDial(srv.Outbound)
+				a.RegisterDial(srv.Outbound, agent.New(db))
 				log.Printf("外呼腿已挂载：路由 %s:%d（POST /api/agent/calls/:callId/dial）", ph, pn)
 			}()
 		}

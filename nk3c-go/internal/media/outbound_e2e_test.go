@@ -81,7 +81,7 @@ func TestOutboundAutoSurveyE2E(t *testing.T) {
 
 	// HTTP 栈（注册外呼路由）
 	a := app.Build(db)
-	a.RegisterDial(srv.Outbound)
+	a.RegisterDial(srv.Outbound, agent.New(db))
 	ts := httptest.NewServer(a.Engine)
 	defer ts.Close()
 

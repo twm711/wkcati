@@ -292,3 +292,23 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 	}
 	return outData, outMsg, nil
 }
+
+// MarkBridgeConnect 桥接接通：写 connect_time + 样本 INCALL（真人坐席模式；结果码由坐席事后手工提交）
+func (s *Service) MarkBridgeConnect(callID int64) error {
+	return s.db.Tx(func(tx *sql.Tx) error {
+		var sampleID int64
+		var connect *string
+		if err := tx.QueryRow(`SELECT sample_id,connect_time FROM cti_call_record WHERE id=?`, callID).Scan(&sampleID, &connect); err != nil {
+			return &BizErr{"4041", "话务不存在"}
+		}
+		if connect != nil && *connect != "" {
+			return nil // 已标记（幂等）
+		}
+		ts := store.NowISO()
+		if _, err := tx.Exec(`UPDATE cti_call_record SET connect_time=? WHERE id=?`, ts, callID); err != nil {
+			return err
+		}
+		_, err := tx.Exec(`UPDATE smp_sample SET status='INCALL' WHERE id=?`, sampleID)
+		return err
+	})
+}

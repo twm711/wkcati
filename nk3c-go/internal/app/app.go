@@ -2,11 +2,14 @@
 package app
 
 import (
+	"context"
 	"database/sql"
+	"net"
 	"encoding/json"
 	"errors"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -122,8 +125,10 @@ func Build(db *store.DB) *App {
 	return app
 }
 
-// RegisterDial 挂载外呼腿路由（话务域启动后由 main 调用；POST /api/agent/calls/:callId/dial）
-func (a *App) RegisterDial(o *media.OutboundCaller) {
+// RegisterDial 挂载外呼腿路由（话务域启动后由 main 调用）
+//   - POST /api/agent/calls/:callId/dial    自动调研外呼
+//   - POST /api/agent/calls/:callId/bridge  坐席桥接（body: {agentUri:"host:port"}；阻塞至任一端挂断）
+func (a *App) RegisterDial(o *media.OutboundCaller, bd media.BridgeDriver) {
 	a.apiGroup.POST("/agent/calls/:callId/dial", func(c *gin.Context) {
 		callID, err := strconv.ParseInt(c.Param("callId"), 10, 64)
 		if err != nil {
@@ -138,6 +143,33 @@ func (a *App) RegisterDial(o *media.OutboundCaller) {
 			rinfo.GinFail(c, rinfo.CodeState, err.Error()); return
 		}
 		rinfo.GinOK(c, data, msg)
+	})
+	a.apiGroup.POST("/agent/calls/:callId/bridge", func(c *gin.Context) {
+		callID, err := strconv.ParseInt(c.Param("callId"), 10, 64)
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeParam, "callId 非法"); return
+		}
+		var body struct {
+			AgentURI string `json:"agentUri" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			rinfo.GinFail(c, rinfo.CodeParam, "agentUri 必填（host:port）"); return
+		}
+		host, portS, err := net.SplitHostPort(body.AgentURI)
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeParam, "agentUri 格式应为 host:port"); return
+		}
+		port, _ := strconv.Atoi(portS)
+		// 阻塞至通话结束（真人通话时长；超 25s 视为演示超时）
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
+		defer cancel()
+		if err := o.Bridge(ctx, callID, bd, host, port); err != nil {
+			rinfo.GinFail(c, rinfo.CodeState, err.Error()); return
+		}
+		var sampleID int64
+		_ = a.DB.QueryRow(`SELECT sample_id FROM cti_call_record WHERE id=?`, callID).Scan(&sampleID)
+		rinfo.GinOK(c, gin.H{"callId": callID, "sampleId": sampleID, "bridgeState": "RELEASED"},
+			"通话结束（桥已释放）；请提交话务结果码（POST /api/agent/result）")
 	})
 }
 
