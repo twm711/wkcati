@@ -122,6 +122,7 @@ func Build(db *store.DB) *App {
 		ivg := api.Group("/ivr")
 		ivg.GET("/flow", iv.GetFlow)
 		ivg.PUT("/flow", a.RequireRoles("groupAdmin"), iv.PutFlow)
+		ivg.PUT("/routes", a.RequireRoles("groupAdmin"), iv.PutRoutes)
 		ivg.POST("/call", iv.StartCall)
 		ivg.POST("/call/:sid/input", iv.Input)
 		ivg.POST("/call/:sid/hangup", iv.Hangup)

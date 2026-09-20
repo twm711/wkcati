@@ -40,7 +40,8 @@ func (s *Service) snapshot(sid string, cur node, sess *session, invalid bool) No
 
 // StartSIP 呼入接续（真实话机入口；与 HTTP StartCall 同一走线）
 func (s *Service) StartSIP(callerNo string) (NodeState, error) {
-	sid, cur, sess, err := s.startCore(callerNo, 1)
+	projectID := s.resolveProject(callerNo)
+	sid, cur, sess, err := s.startCore(callerNo, projectID)
 	if err != nil {
 		return NodeState{}, err
 	}
@@ -71,8 +72,32 @@ func (s *Service) HangupSIP(sid string) (NodeState, error) {
 
 // ── 核心实现（gin handler 与 SIP 驱动共同调用）─────────────────────────
 
+func (s *Service) resolveProject(callerNo string) int64 {
+	rows, err := s.db.Query(`SELECT caller_prefix,project_id FROM ivr_route WHERE enabled=1`)
+	if err != nil {
+		return 1
+	}
+	defer rows.Close()
+	best := ""
+	projectID := int64(1)
+	for rows.Next() {
+		var prefix string
+		var pid int64
+		if rows.Scan(&prefix, &pid) != nil {
+			continue
+		}
+		if strings.HasPrefix(callerNo, prefix) && len(prefix) >= len(best) {
+			best, projectID = prefix, pid
+		}
+	}
+	if projectID <= 0 {
+		return 1
+	}
+	return projectID
+}
+
 func (s *Service) startCore(callerNo string, projectID int64) (string, node, *session, error) {
-	f, nodes, err := s.flowNodes()
+	f, nodes, err := s.flowNodes(projectID)
 	if err != nil {
 		return "", node{}, nil, err
 	}
@@ -98,7 +123,7 @@ func (s *Service) keyCore(sid string, key string, message *string) (node, *sessi
 	if sess.Done {
 		return node{}, sess, false, errSessionDone
 	}
-	_, nodes, err := s.flowNodes()
+	_, nodes, err := s.flowNodes(sess.ProjectID)
 	if err != nil {
 		return node{}, nil, false, err
 	}

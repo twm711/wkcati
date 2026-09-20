@@ -42,6 +42,12 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## IVR 主叫号码多项目路由（M3-10）
+
+- 新增 `ivr_route` 表与 `PUT /api/ivr/routes`（督导权限），按最长主叫号码前缀选择项目。
+- IVR 流程增加 `project_id` 隔离；`GET/PUT /api/ivr/flow` 支持 `projectId`。
+- 真实 SIP 呼入按主叫号码路由到项目流程；无匹配时兼容回退项目 1。
+
 ## IVR 多项目归属修正（M3 第九增量）
 
 - IVR HTTP 模拟会话支持传入 `projectId`，并将项目归属保存到会话上下文。

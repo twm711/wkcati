@@ -151,3 +151,5 @@
 | GET | `/api/audit/logs` | 督导及以上查询最近审计记录（支持 method/limit，最多 500） |
 
 > `POST /api/ivr/call` 支持可选 `projectId`；转人工工单沿用该项目归属。真实 SIP 号码到项目的绑定路由仍待实现。
+
+| PUT | `/api/ivr/routes` | 督导配置主叫号码前缀→项目路由 |

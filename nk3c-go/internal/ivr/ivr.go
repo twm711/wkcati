@@ -2,8 +2,10 @@
 package ivr
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -48,9 +50,12 @@ type session struct {
 
 var sessions = map[string]*session{}
 
-func (s *Service) flowNodes() (flow, map[string]node, error) {
+func (s *Service) flowNodes(projectID int64) (flow, map[string]node, error) {
+	if projectID == 0 {
+		projectID = 1
+	}
 	var raw string
-	if err := s.db.QueryRow(`SELECT flow_json FROM ivr_flow WHERE id=1`).Scan(&raw); err != nil {
+	if err := s.db.QueryRow(`SELECT flow_json FROM ivr_flow WHERE project_id=? ORDER BY id LIMIT 1`, projectID).Scan(&raw); err != nil {
 		return flow{}, nil, err
 	}
 	var f flow
@@ -65,8 +70,14 @@ func (s *Service) flowNodes() (flow, map[string]node, error) {
 }
 
 func (s *Service) GetFlow(c *gin.Context) {
+	projectID := int64(1)
+	if rawID := c.Query("projectId"); rawID != "" {
+		if n, err := strconv.ParseInt(rawID, 10, 64); err == nil && n > 0 {
+			projectID = n
+		}
+	}
 	var name, raw, updated string
-	if err := s.db.QueryRow(`SELECT name,flow_json,updated_at FROM ivr_flow WHERE id=1`).Scan(&name, &raw, &updated); err != nil {
+	if err := s.db.QueryRow(`SELECT name,flow_json,updated_at FROM ivr_flow WHERE project_id=? ORDER BY id LIMIT 1`, projectID).Scan(&name, &raw, &updated); err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
 	}
@@ -130,12 +141,65 @@ func validate(f flow) string {
 }
 
 type flowReq struct {
-	Name string       `json:"name"`
-	Flow flowValidate `json:"flow" binding:"required"`
+	Name      string       `json:"name"`
+	ProjectID int64        `json:"projectId"`
+	Flow      flowValidate `json:"flow" binding:"required"`
 }
 type flowValidate struct {
 	Entry string `json:"entry"`
 	Nodes []node `json:"nodes"`
+}
+
+type routeItem struct {
+	Prefix    string `json:"prefix"`
+	ProjectID int64  `json:"projectId"`
+	Enabled   *bool  `json:"enabled"`
+}
+
+func (s *Service) PutRoutes(c *gin.Context) {
+	var req struct {
+		Routes []routeItem `json:"routes" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "routes 参数错误")
+		return
+	}
+	if len(req.Routes) == 0 {
+		rinfo.GinFail(c, rinfo.CodeParam, "至少需要一条路由")
+		return
+	}
+	seen := map[string]bool{}
+	for _, r := range req.Routes {
+		if seen[r.Prefix] || r.ProjectID <= 0 {
+			rinfo.GinFail(c, rinfo.CodeParam, "prefix 重复或 projectId 非法")
+			return
+		}
+		seen[r.Prefix] = true
+		var one int
+		if err := s.db.QueryRow(`SELECT 1 FROM prj_project WHERE id=?`, r.ProjectID).Scan(&one); err != nil {
+			rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
+			return
+		}
+	}
+	if err := s.db.Tx(func(tx *sql.Tx) error {
+		if _, err := tx.Exec(`DELETE FROM ivr_route`); err != nil {
+			return err
+		}
+		for i, r := range req.Routes {
+			enabled := 1
+			if r.Enabled != nil && !*r.Enabled {
+				enabled = 0
+			}
+			if _, err := tx.Exec(`INSERT INTO ivr_route(id,caller_prefix,project_id,enabled) VALUES(?,?,?,?)`, i+1, r.Prefix, r.ProjectID, enabled); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	rinfo.GinOK(c, true, "IVR 主叫号码路由已更新")
 }
 
 func (s *Service) PutFlow(c *gin.Context) {
@@ -145,13 +209,16 @@ func (s *Service) PutFlow(c *gin.Context) {
 		return
 	}
 	f := flow{Entry: req.Flow.Entry, Nodes: req.Flow.Nodes}
+	if req.ProjectID == 0 {
+		req.ProjectID = 1
+	}
 	if msg := validate(f); msg != "" {
 		rinfo.GinFail(c, rinfo.CodeParam, "流程校验失败："+msg)
 		return
 	}
 	raw, _ := json.Marshal(f)
-	_, err := s.db.Exec(`UPDATE ivr_flow SET name=?,flow_json=?,updated_at=? WHERE id=1`,
-		req.Name, string(raw), store.NowISO())
+	_, err := s.db.Exec(`UPDATE ivr_flow SET name=?,flow_json=?,updated_at=? WHERE project_id=?`,
+		req.Name, string(raw), store.NowISO(), req.ProjectID)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
