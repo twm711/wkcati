@@ -18,7 +18,8 @@ type SessionKiller interface {
 
 type CTIController interface {
 	Hangup(callID int64) error
-	AddSupervisor(ctx context.Context, callID int64, host string, port int) error
+	AddSupervisor(ctx context.Context, callID int64, host string, port int, listenOnly bool) error
+	SetSupervisorMode(callID int64, listenOnly bool) error
 }
 
 type Service struct {

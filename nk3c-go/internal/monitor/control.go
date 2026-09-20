@@ -16,7 +16,7 @@ type controlReq struct {
 	SupervisorURI string `json:"supervisorUri"`
 }
 
-// Control 当前实际执行 HANGUP；其余 CTI 动作明确返回未实现，避免把“记录事件”冒充成媒体控制。
+// Control executes real media controls only; unsupported actions never return fake success.
 func (s *Service) Control(c *gin.Context) {
 	u := auth.From(c)
 	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
@@ -28,10 +28,10 @@ func (s *Service) Control(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeParam, "callId/action 参数错误")
 		return
 	}
-	if req.Action == "BARGE" {
+	if req.Action == "LISTEN" || req.Action == "BARGE" {
 		host, portText, err := net.SplitHostPort(req.SupervisorURI)
 		if err != nil || host == "" {
-			rinfo.GinFail(c, rinfo.CodeParam, "BARGE 需要 supervisorUri=host:port")
+			rinfo.GinFail(c, rinfo.CodeParam, "LISTEN/BARGE 需要 supervisorUri=host:port")
 			return
 		}
 		port, err := strconv.Atoi(portText)
@@ -43,18 +43,25 @@ func (s *Service) Control(c *gin.Context) {
 			rinfo.GinFail(c, rinfo.CodeState, "话务域控制器未启动")
 			return
 		}
-		if err := s.cti.AddSupervisor(context.Background(), req.CallID, host, port); err != nil {
-			rinfo.GinFail(c, rinfo.CodeState, "加入督导腿失败："+err.Error())
-			return
+		listenOnly := req.Action == "LISTEN"
+		if err := s.cti.SetSupervisorMode(req.CallID, listenOnly); err != nil {
+			if err := s.cti.AddSupervisor(context.Background(), req.CallID, host, port, listenOnly); err != nil {
+				rinfo.GinFail(c, rinfo.CodeState, "加入督导腿失败："+err.Error())
+				return
+			}
 		}
 		if s.qcHub != nil {
-			s.qcHub.Publish("BARGE", gin.H{"callId": req.CallID, "supervisorUri": req.SupervisorURI, "byUserId": u.ID})
+			s.qcHub.Publish(req.Action, gin.H{"callId": req.CallID, "supervisorUri": req.SupervisorURI, "byUserId": u.ID})
 		}
-		rinfo.GinOK(c, gin.H{"callId": req.CallID, "action": req.Action}, "督导已加入三方通话")
+		msg := "督导已加入三方通话"
+		if listenOnly {
+			msg = "督导已进入监听"
+		}
+		rinfo.GinOK(c, gin.H{"callId": req.CallID, "action": req.Action}, msg)
 		return
 	}
 	if req.Action != "HANGUP" {
-		rinfo.GinFail(c, rinfo.CodeState, "当前仅支持 HANGUP/BARGE；LISTEN/MESSAGE/强制状态切换待接入媒体控制")
+		rinfo.GinFail(c, rinfo.CodeState, "当前仅支持 HANGUP/LISTEN/BARGE；MESSAGE/强制状态切换待接入媒体控制")
 		return
 	}
 	if s.cti == nil {

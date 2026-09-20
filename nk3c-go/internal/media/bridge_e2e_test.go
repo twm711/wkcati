@@ -118,7 +118,12 @@ func TestBridgeAgentCallE2E(t *testing.T) {
 	bargeDone := make(chan bool, 1)
 	go func() {
 		time.Sleep(1200 * time.Millisecond)
-		r := post("/api/monitor/control", supTok, map[string]interface{}{"callId": callID, "action": "BARGE", "supervisorUri": "127.0.0.1:25082"})
+		r := post("/api/monitor/control", supTok, map[string]interface{}{"callId": callID, "action": "LISTEN", "supervisorUri": "127.0.0.1:25082"})
+		if r["success"] != true {
+			t.Errorf("LISTEN 失败: %v", r)
+		}
+		time.Sleep(250 * time.Millisecond)
+		r = post("/api/monitor/control", supTok, map[string]interface{}{"callId": callID, "action": "BARGE", "supervisorUri": "127.0.0.1:25082"})
 		if r["success"] != true {
 			t.Errorf("BARGE 失败: %v", r)
 		}

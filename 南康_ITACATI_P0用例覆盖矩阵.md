@@ -29,7 +29,7 @@
 | 23 | M07 执行管理 | 断线续答不丢题 | ✅已自动化 | test_25 | 同题改答 upsert 覆盖不重复、旧值不计入统计（断线续答依据 answered_at） |
 | 24 | M07 执行管理 | 结果码幂等提交 | ✅已自动化 | test_03 | 重复结果码返回 {duplicate:true, firstResultCode}，仅一条记录 |
 | 25 | M08 实时监控 | 配额将满报警 | ◻原型层 | Live 督导台 | 配额条 ≥90% 变橙、满格变绿；站内信/声音报警未做 |
-| 26 | M08 实时监控 | 监听与插话 | ◐部分 | QC WS/HANGUP 已有；LISTEN/BARGE 真实媒体控制未实现 | 当前 Go 已实现活动通话强挂；监听/插话需要第三方 SIP leg + BridgeMix 媒体控制 |
+| 26 | M08 实时监控 | 监听与插话 | ◐部分 | QC WS/HANGUP 已有；LISTEN/BARGE 已接入 BridgeMix 三方媒体控制 | 当前 Go 已实现活动通话强挂；监听已支持督导上行静音，BARGE 可解除静音；MESSAGE 等其它控制仍待实现 |
 | 27 | M09 答卷管理 | 录音-答卷联动审核 | ◐部分 | Go 录音回放/答卷审核 | Go 有 WAV 回放与审核，但 React 播放进度↔逐题高亮联动尚未实现 |
 | 28 | M09 答卷管理 | 审核状态流转 | ✅已自动化 | test_06/07 | SUBMITTED→AUDITED/REJECTED；驳回样本回池生成重访 |
 | 29 | M10 统计报表 | 单题统计实时与一致 | ✅已自动化 | test_02/25 | 频数实时（SUBMITTED+AUDITED 口径）；SPSS 值对账未做 |
