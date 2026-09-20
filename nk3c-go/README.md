@@ -44,9 +44,9 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 ## CTI 督导控制面第一步（M3-12）
 
-- 新增 `POST /api/monitor/control`，督导及以上可对活动 SIP 外呼/桥接发送 `HANGUP`。
-- 话务域新增活动 call-leg 注册表，通话结束自动注销，避免控制已结束通话。
-- `GET /api/monitor/control/capabilities` 返回真实能力矩阵；`LISTEN/BARGE/MESSAGE/FORCE_BUSY/FORCE_READY` 暂不返回假成功，当前明确返回未实现。
+- 新增 `POST /api/monitor/control`，督导及以上可对活动 SIP 外呼/桥接发送 `HANGUP`，并通过 `BARGE + supervisorUri=host:port` 加入第三方督导 SIP leg。
+- 话务域从两方 `Bridge` 改为可扩展的 `BridgeMix`，活动 call-leg 和督导 leg 会在通话结束时自动清理。
+- `GET /api/monitor/control/capabilities` 返回真实能力矩阵；`LISTEN` 仍未实现（需要督导上行静音/媒体方向控制），`MESSAGE/FORCE_BUSY/FORCE_READY` 仍明确返回未实现。
 
 ## IVR 主叫号码多项目路由（M3-10）
 

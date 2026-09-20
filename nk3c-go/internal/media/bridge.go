@@ -34,20 +34,35 @@ func (o *OutboundCaller) Bridge(ctx context.Context, callID int64, bd BridgeDriv
 	if err != nil {
 		return err
 	}
-	bridge := diago.NewBridge()
+	mix := diago.NewBridgeMix()
 	from := &sip.FromHeader{
 		DisplayName: "NK3C 坐席外呼",
 		Address:     sip.Uri{User: task.CallerID, Host: "nk3c.local"},
 		Params:      sip.NewParams(),
 	}
-	dial := func(host string, port int, user string) (*diago.DialogClientSession, error) {
-		opts := diago.InviteOptions{Transport: "udp"}
-		opts.Headers = append(opts.Headers, from)
-		return o.dg.InviteBridge(ctx, sip.Uri{User: digitsOnly(user), Host: host, Port: port}, &bridge, opts)
+	dial := func(host string, port int, user string, originator diago.DialogSession) (*diago.DialogClientSession, error) {
+		d, err := o.dg.NewDialog(sip.Uri{User: digitsOnly(user), Host: host, Port: port}, diago.NewDialogOptions{Transport: "udp"})
+		if err != nil {
+			return nil, err
+		}
+		opts := diago.InviteClientOptions{Originator: originator, Headers: []sip.Header{from}}
+		if err := d.Invite(ctx, opts); err != nil {
+			_ = d.Close()
+			return nil, err
+		}
+		if err := d.Ack(ctx); err != nil {
+			_ = d.Close()
+			return nil, err
+		}
+		if err := mix.AddDialogSession(d); err != nil {
+			_ = d.Close()
+			return nil, err
+		}
+		return d, nil
 	}
 
-	slog.Info("B2BUA 桥接：呼叫客户", "call", callID, "phone", task.Phone)
-	cust, err := dial(o.PeerHost, o.PeerPort, task.Phone)
+	slog.Info("B2BUA 混音桥：呼叫客户", "call", callID, "phone", task.Phone)
+	cust, err := dial(o.PeerHost, o.PeerPort, task.Phone, nil)
 	if err != nil {
 		slog.Warn("客户腿未接通", "err", err)
 		_, _, _ = o.Finish(callID, "NA") // 未接通 → NA 回池（业务规则统一）
@@ -60,7 +75,7 @@ func (o *OutboundCaller) Bridge(ctx context.Context, callID int64, bd BridgeDriv
 		slog.Warn("接通标记失败", "err", err)
 	}
 	slog.Info("客户已接通，呼叫坐席", "agent", fmt.Sprintf("%s:%d", agentHost, agentPort))
-	ag, err := dial(agentHost, agentPort, task.CallerID)
+	ag, err := dial(agentHost, agentPort, task.CallerID, cust)
 	if err != nil {
 		slog.Warn("坐席腿未接通，挂断客户", "err", err)
 		_ = cust.Hangup(ctx)
@@ -68,7 +83,9 @@ func (o *OutboundCaller) Bridge(ctx context.Context, callID int64, bd BridgeDriv
 	}
 	o.register(callID, func(ctx context.Context) error { return ag.Hangup(ctx) })
 	defer ag.Close()
-	slog.Info("桥接建立（双方通话中）", "call", callID)
+	o.registerMix(callID, mix)
+	defer o.unregisterMix(callID)
+	slog.Info("桥接建立（客户/坐席两方混音中，可扩展督导第三方腿）", "call", callID)
 
 	// 任一端挂断 → 桥散
 	select {

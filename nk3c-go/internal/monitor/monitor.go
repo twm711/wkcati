@@ -2,6 +2,8 @@
 package monitor
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"nk3c/internal/auth"
 	"nk3c/internal/realtime"
@@ -16,6 +18,7 @@ type SessionKiller interface {
 
 type CTIController interface {
 	Hangup(callID int64) error
+	AddSupervisor(ctx context.Context, callID int64, host string, port int) error
 }
 
 type Service struct {

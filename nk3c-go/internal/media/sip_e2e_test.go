@@ -109,4 +109,6 @@ func poll(t *testing.T, d time.Duration, cond func() bool) {
 	}
 }
 
-func sipURIAbs(user, host string, port int) sip.Uri { return sip.Uri{User: user, Host: host, Port: port} }
+func sipURIAbs(user, host string, port int) sip.Uri {
+	return sip.Uri{User: user, Host: host, Port: port}
+}

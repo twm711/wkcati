@@ -42,6 +42,13 @@ func (s *SIPServer) Hangup(callID int64) error {
 	return s.Outbound.Hangup(callID)
 }
 
+func (s *SIPServer) AddSupervisor(ctx context.Context, callID int64, host string, port int) error {
+	if s.Outbound == nil {
+		return fmt.Errorf("话务域尚未启动")
+	}
+	return s.Outbound.AddSupervisor(ctx, callID, host, port)
+}
+
 // Start 阻塞运行（调用方包 goroutine）；ctx 取消即关停
 func (s *SIPServer) Start(ctx context.Context) error {
 	if s.DtmfWait == 0 {

@@ -36,6 +36,8 @@ type OutboundCaller struct {
 	currentCall int64
 	controlMu   sync.Mutex
 	active      *ActiveCalls
+	mixMu       sync.Mutex
+	mixes       map[int64]*diago.BridgeMix
 }
 
 // Dial 执行一通外呼自动调研；返回结果码提交数据（供 HTTP 响应）

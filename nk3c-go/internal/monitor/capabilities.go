@@ -17,7 +17,7 @@ func (s *Service) Capabilities(c *gin.Context) {
 	rinfo.GinOK(c, gin.H{
 		"HANGUP":      s.cti != nil,
 		"LISTEN":      false,
-		"BARGE":       false,
+		"BARGE":       s.cti != nil,
 		"MESSAGE":     false,
 		"FORCE_BUSY":  false,
 		"FORCE_READY": false,

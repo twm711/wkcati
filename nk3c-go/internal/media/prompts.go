@@ -19,13 +19,13 @@ func WavTone(durMs int, freqs ...float64) []byte {
 	binary.LittleEndian.PutUint32(pcm[4:8], uint32(36+n*2))
 	copy(pcm[8:12], "WAVE")
 	copy(pcm[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(pcm[16:20], 16)          // fmt 块长
-	binary.LittleEndian.PutUint16(pcm[20:22], 1)           // PCM
-	binary.LittleEndian.PutUint16(pcm[22:24], 1)           // 单声道
-	binary.LittleEndian.PutUint32(pcm[24:28], sampleRate)  // 采样率
-	binary.LittleEndian.PutUint32(pcm[28:32], sampleRate*2)// 字节率
-	binary.LittleEndian.PutUint16(pcm[32:34], 2)           // 块对齐
-	binary.LittleEndian.PutUint16(pcm[34:36], 16)          // 位深
+	binary.LittleEndian.PutUint32(pcm[16:20], 16)           // fmt 块长
+	binary.LittleEndian.PutUint16(pcm[20:22], 1)            // PCM
+	binary.LittleEndian.PutUint16(pcm[22:24], 1)            // 单声道
+	binary.LittleEndian.PutUint32(pcm[24:28], sampleRate)   // 采样率
+	binary.LittleEndian.PutUint32(pcm[28:32], sampleRate*2) // 字节率
+	binary.LittleEndian.PutUint16(pcm[32:34], 2)            // 块对齐
+	binary.LittleEndian.PutUint16(pcm[34:36], 16)           // 位深
 	copy(pcm[36:40], "data")
 	binary.LittleEndian.PutUint32(pcm[40:44], uint32(n*2))
 	// 波形：多频叠加 + 5ms 淡入淡出（防爆音）
@@ -36,7 +36,7 @@ func WavTone(durMs int, freqs ...float64) []byte {
 			v += math.Sin(2 * math.Pi * f * t)
 		}
 		v = v / float64(len(freqs)) * 0.5
-		
+
 		switch {
 		case i < sampleRate*5/1000:
 			v *= float64(i) / float64(sampleRate*5/1000)

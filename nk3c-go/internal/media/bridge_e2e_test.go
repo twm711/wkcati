@@ -5,9 +5,9 @@ package media_test
 import (
 	"bytes"
 	"context"
-	"log/slog"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"

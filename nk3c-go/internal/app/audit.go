@@ -21,8 +21,12 @@ func auditMiddleware(db *store.DB) gin.HandlerFunc {
 		if !mutating && !sensitive {
 			return
 		}
-		u := auth.From(c)
-		if u == nil {
+		v, exists := c.Get("user")
+		if !exists {
+			return
+		}
+		u, ok := v.(*auth.User)
+		if !ok || u == nil {
 			return
 		}
 		id := fmt.Sprintf("%d", time.Now().UnixNano())
