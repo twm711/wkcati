@@ -154,6 +154,6 @@
 
 | PUT | `/api/ivr/routes` | 督导配置主叫号码前缀→项目路由 |
 
-| POST | `/api/monitor/control` | 督导 CTI 控制；真实执行 `HANGUP/BARGE`（BARGE 需 supervisorUri），LISTEN/消息/强制状态待实现 |
+| POST | `/api/monitor/control` | 督导 CTI 控制；真实执行 `HANGUP/BARGE`（BARGE 需 supervisorUri），LISTEN/消息/强制状态待实现；BARGE 已有三方 SIP E2E |
 
 | GET | `/api/monitor/control/capabilities` | 返回实际已接通的 CTI 控制能力，避免 UI 伪造监听/插话按钮 |

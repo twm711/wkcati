@@ -59,6 +59,7 @@ func TestBridgeAgentCallE2E(t *testing.T) {
 	}
 	mkAnswer("客户", 25080, 3500*time.Millisecond)
 	mkAnswer("坐席", 25081, 30*time.Second)
+	mkAnswer("督导", 25082, 10*time.Second)
 	time.Sleep(400 * time.Millisecond)
 
 	// 话务域 + HTTP 栈（bridge 路由）
@@ -71,6 +72,7 @@ func TestBridgeAgentCallE2E(t *testing.T) {
 	srv.Outbound.Driver = agent.New(db)
 	srv.Outbound.PeerHost, srv.Outbound.PeerPort = "127.0.0.1", 25080
 	a := app.Build(db)
+	a.WireCTI(srv)
 	a.RegisterDial(srv.Outbound, agent.New(db))
 	ts := httptest.NewServer(a.Engine)
 	defer ts.Close()
@@ -112,6 +114,16 @@ func TestBridgeAgentCallE2E(t *testing.T) {
 	t.Logf("派样 #%d 样本 %d，发起桥接外呼…", callID, sampleID)
 
 	// ① 桥接（阻塞至客户 3.5s 后挂断）；通话中坐席实时录入答案（真人动线）
+	supTok := post("/api/auth/login", "", map[string]string{"loginName": "sup01", "password": "123456"})["data"].(map[string]interface{})["sessionId"].(string)
+	bargeDone := make(chan bool, 1)
+	go func() {
+		time.Sleep(1200 * time.Millisecond)
+		r := post("/api/monitor/control", supTok, map[string]interface{}{"callId": callID, "action": "BARGE", "supervisorUri": "127.0.0.1:25082"})
+		if r["success"] != true {
+			t.Errorf("BARGE 失败: %v", r)
+		}
+		bargeDone <- true
+	}()
 	ansDone := make(chan bool, 1)
 	go func() {
 		defer func() { ansDone <- true }()
@@ -126,7 +138,8 @@ func TestBridgeAgentCallE2E(t *testing.T) {
 		t.Fatalf("桥接失败: %v", br)
 	}
 	<-ansDone
-	t.Log("桥接已释放（客户挂断）")
+	<-bargeDone
+	t.Log("桥接已释放（客户挂断，督导 BARGE 三方 leg 已接入）")
 
 	// ② 接通联动断言：connect_time + 样本 INCALL
 	var connect *string
@@ -177,6 +190,7 @@ func TestFlowHotSwapSIP(t *testing.T) {
 	time.Sleep(400 * time.Millisecond)
 
 	a := app.Build(db)
+	a.WireCTI(srv)
 	ts := httptest.NewServer(a.Engine)
 	defer ts.Close()
 	req2 := func(method, path, tok string, body interface{}) map[string]interface{} {
