@@ -93,7 +93,7 @@
 
 应称为“Goose 兼容格式的内嵌迁移子集”，不能称为已经接入 goose CLI。
 
-#### D. MySQL“支持”被高估
+#### D. MySQL“支持”需要区分“已接通路径”和“已验收”
 
 当前新增了 `migrations/mysql/001_init.sql` 和 `003_cti_extensions.sql`，也对答题 upsert 增加了 MySQL 分支；但是：
 
@@ -103,7 +103,7 @@
 - 没有 MySQL 并发派样、事务隔离、`SKIP LOCKED` 压测；
 - MySQL 迁移文件是演练草案，不等于生产切换完成。
 
-因此应标为：**MySQL 方言静态演练完成，MySQL 运行时切换未完成。**
+因此应标为：**MySQL 运行时迁移路径已接通，但真实实例连接、SKIP LOCKED、并发压测和故障演练未完成。**
 
 #### E. 47 个 OpenAPI 端点不是 Go 实现端点数
 

@@ -3,7 +3,7 @@
 > 南康科技 ITACATI / NK-3C 电话外呼调查系统的**全链路交付 + 双轨实现**：
 > 完整文档与原型 → Python 行为基准 Demo（31 用例全绿）→ Go + React 目标栈重构（骨架已落地）。
 
-![status](https://img.shields.io/badge/里程碑-M0%2BM1%20已落地-green) ![go](https://img.shields.io/badge/Go-1.22-00ADD8) ![react](https://img.shields.io/badge/React-18%20·%20Antd%205-61DAFB) ![tests](https://img.shields.io/badge/tests-demo%2031%20·%20Go%209%20链路-brightgreen)
+![status](https://img.shields.io/badge/里程碑-M0%2BM3%20核心已落地-green) ![go](https://img.shields.io/badge/Go-1.23-00ADD8) ![react](https://img.shields.io/badge/React-18%20·%20Antd%205-61DAFB) ![tests](https://img.shields.io/badge/tests-demo%2031%20·%20Go%209%20链路-brightgreen)
 
 ## 仓库总览
 

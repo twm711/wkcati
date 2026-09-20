@@ -1,6 +1,6 @@
 # NK3C Go 后端骨架（M0 可运行 + M1 业务闭环）
 
-技术栈：Go 1.22 + gin + database/sql（SQLite 开发 / MySQL 生产，驱动可切换）。
+技术栈：Go 1.23 + gin + database/sql（SQLite 开发 / MySQL 生产，驱动可切换）。
 与 `nk3c-demo`（Python 行为基准）接口语义逐条对齐，`internal/itests` 为移植断言。
 
 ## 运行
