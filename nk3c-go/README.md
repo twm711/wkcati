@@ -7,7 +7,7 @@
 
 ```bash
 go build ./...
-go run ./cmd/nk3c-api --addr :8080 --sip-addr 0.0.0.0:5060 --reset
+go run ./cmd/nk3c-api --driver sqlite --addr :8080 --sip-addr 0.0.0.0:5060 --reset
 # API: http://localhost:8080/api/health
 # 话务域: SIP/UDP :5060 呼入 → IVR（1 调研 / 2 留言 / 0 转人工自动落工单）
 #（--sip-addr "" 禁用话务域；diago 需 Go ≥1.23 工具链）
@@ -46,7 +46,7 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 - web 新增 `/exports` 导出中心：项目/格式选择、列选择、CSV/XLSX/SAV 下载，浏览器本地保留最近 20 条导出历史。
 - `GET /api/export/:pid/columns` 返回可选列；导出支持 `?cols=0,1,...`。XLSX 结果码分布在裁剪列后仍正确。
-- 新增 `migrations/mysql/001_init.sql` 与 `003_cti_extensions.sql`（MySQL 8.0、InnoDB、utf8mb4）；答题 upsert 对 SQLite 使用 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。
+- 新增 `migrations/mysql/001_init.sql`、`002_qc.sql`、`003_cti_extensions.sql`、`004_seed.sql`（MySQL 8.0、InnoDB、utf8mb4）；`--driver mysql` 已按 driver 选择迁移目录，答题 upsert 对 SQLite 使用 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。真实 MySQL 连接/压测仍需专用实例。
 
 ## CTI 扩展列迁移（M3 第三增量）
 

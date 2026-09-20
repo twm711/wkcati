@@ -20,19 +20,23 @@ import (
 	"nk3c/internal/app"
 	"nk3c/internal/ivr"
 	"nk3c/internal/media"
-	"nk3c/internal/workorder"
 	"nk3c/internal/store"
+	"nk3c/internal/workorder"
 )
 
 func main() {
 	addr := flag.String("addr", ":8080", "API 监听地址")
+	driver := flag.String("driver", "sqlite", "数据库驱动：sqlite 或 mysql")
 	dsn := flag.String("dsn", "file:nk3c.db?_journal=WAL&_busy_timeout=5000", "数据库 DSN")
-	force := flag.Bool("reset", false, "启动时重建数据库（演示种子）")
+	force := flag.Bool("reset", false, "启动时重建数据库（仅 SQLite 演示种子）")
 	sipAddr := flag.String("sip-addr", "0.0.0.0:5060", "话务域 SIP/UDP 监听（空=禁用真实话务域）")
 	outbound := flag.String("outbound", "", "外呼路由 host:port（被叫模拟器/中继；空=外呼腿不可用）")
 	flag.Parse()
 
-	db, err := store.Open("sqlite", *dsn)
+	if *driver != "sqlite" && *driver != "mysql" {
+		log.Fatalf("不支持的数据库驱动: %s", *driver)
+	}
+	db, err := store.Open(*driver, *dsn)
 	if err != nil {
 		log.Fatal(err)
 	}

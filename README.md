@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | 📚 文档与原型 | 主文档 / Go+React 实现文档 / 部署手册 / OpenAPI 47 端点 / 3 版建表 SQL（60 表）/ 4 交互原型 / 96 条测试用例 / P0 矩阵 | ✅ 交付 |
 | 🐍 nk3c-demo | FastAPI+SQLite 行为基准：坐席/督导/IVR/项目管理四控制台 Live、工单回访闭环、SPSS 导出、WS 实时质检 | ✅ 31 集成用例全绿 |
-| 🚀 nk3c-go | Go 1.22 + gin 后端（M0+M1）：ResultInfo/RBAC/双方言存储/六大业务域 + 9 链路集成测试（-race 全绿） | ✅ 可运行 |
+| 🚀 nk3c-go | Go 1.23 + gin 后端（M0–M3 基础能力）：ResultInfo/RBAC/SQLite+MySQL 方言迁移/核心业务域 + 9 链路集成测试 | ✅ 可运行 |
 | ⚛️ nk3c-go/web | React 18 + Antd 5 + Vite 前端骨架：登录/坐席台/监控墙+审核/项目管理/工单/IVR 模拟器五页 | ✅ tsc 全绿 + 代理链 E2E |
 
 ## 快速开始
@@ -63,7 +63,8 @@ cd nk3c-go/web && pnpm build                          # tsc --noEmit 严格类�
 - ✅ **M0** 可运行骨架（gin+ResultInfo+RBAC+迁移+React 五页）
 - ✅ **M1** 业务闭环（派样四过滤/配额原子/结果码去向/审核状态机/工单回访 E2E/IVR 解释器）
 - ◐ **M2** 话务域收官：呼入 IVR + 外呼自动调研 + B2BUA 坐席桥接 + 录音回放 + flow 热更（SIP E2E ×5 + gophone 演练 6/6）
-- ◻ **M3+** 录音质检/SPSS 导出移植/WS Hub/多机拓扑 → 见《实现文档_GoReact版》
+- ◐ **M3** 导出中心、监控/QC WS、强签、Web 质检面板已落地；异步导出/质检任务/CTI 控制面仍待完成
+- ◻ **M5–M6** 预测外呼、完整质检、MySQL 压测、多机生产化待完成
 
 > ⚠️ 已知环境约束：2GB 内存下 `modernc.org/sqlite` 编译与 `vite build` 均会 OOM，生产构建需 ≥4GB（详见 [交接文档](交接文档.md) §7）。
 

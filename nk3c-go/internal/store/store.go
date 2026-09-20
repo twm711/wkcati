@@ -17,6 +17,9 @@ import (
 //go:embed migrations/sqlite/*.sql
 var sqliteMigrations embed.FS
 
+//go:embed migrations/mysql/*.sql
+var mysqlMigrations embed.FS
+
 type DB struct {
 	*sql.DB
 	Driver string
@@ -73,11 +76,21 @@ func (d *DB) Migrate(force bool) error {
 			return err
 		}
 	}
-	if _, err := d.Exec("CREATE TABLE IF NOT EXISTS schema_migrations(version TEXT PRIMARY KEY, applied_at TEXT)"); err != nil {
+	migrationTable := `CREATE TABLE IF NOT EXISTS schema_migrations(version VARCHAR(32) PRIMARY KEY, applied_at VARCHAR(64))`
+	if d.Driver == "mysql" {
+		migrationTable = `CREATE TABLE IF NOT EXISTS schema_migrations(version VARCHAR(32) PRIMARY KEY, applied_at DATETIME NOT NULL)`
+	}
+	if _, err := d.Exec(migrationTable); err != nil {
 		return err
 	}
-	// 顺序应用未执行的迁移版本（goose 语义子集：文件名=版本号，单文件单事务语义由外层保证）
-	entries, err := sqliteMigrations.ReadDir("migrations/sqlite")
+	// 按 driver 选择方言迁移；文件名数字前缀决定顺序。
+	fs := sqliteMigrations
+	dir := "migrations/sqlite"
+	if d.Driver == "mysql" {
+		fs = mysqlMigrations
+		dir = "migrations/mysql"
+	}
+	entries, err := fs.ReadDir(dir)
 	if err != nil {
 		return err
 	}
@@ -95,11 +108,11 @@ func (d *DB) Migrate(force bool) error {
 		if done == ver {
 			continue
 		}
-		data, err := sqliteMigrations.ReadFile("migrations/sqlite/" + name)
+		data, err := fs.ReadFile(dir + "/" + name)
 		if err != nil {
 			return err
 		}
-		if ver == "003" {
+		if ver == "003" && d.Driver == "sqlite" {
 			// 003 曾有部分字段随 001 初始表发布；升级旧库时允许重复列，
 			// 但其余错误仍必须中止，保证迁移不会静默损坏 schema。
 			clean := make([]string, 0)
@@ -120,7 +133,11 @@ func (d *DB) Migrate(force bool) error {
 		} else if _, err := d.Exec(string(data)); err != nil {
 			return fmt.Errorf("迁移 %s 失败: %w", ver, err)
 		}
-		if _, err := d.Exec(`INSERT INTO schema_migrations VALUES(?,?)`, ver, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		appliedAt := time.Now().UTC().Format(time.RFC3339)
+		if d.Driver == "mysql" {
+			appliedAt = time.Now().UTC().Format("2006-01-02 15:04:05")
+		}
+		if _, err := d.Exec(`INSERT INTO schema_migrations VALUES(?,?)`, ver, appliedAt); err != nil {
 			return err
 		}
 	}
