@@ -157,3 +157,6 @@
 | POST | `/api/monitor/control` | 督导 CTI 控制；真实执行 `HANGUP/BARGE`（BARGE 需 supervisorUri），MESSAGE/强制状态待实现；LISTEN/BARGE 均已有三方 SIP E2E |
 
 | GET | `/api/monitor/control/capabilities` | 返回实际已接通的 CTI 控制能力，避免 UI 伪造监听/插话按钮 |
+
+| POST | `/api/agent/state` | 坐席设置 READY/BUSY/PAUSE 状态 |
+| POST | `/api/monitor/force-state` | 督导强制设置坐席状态 |

@@ -11,9 +11,10 @@ import (
 )
 
 type controlReq struct {
-	CallID        int64  `json:"callId" binding:"required"`
+	CallID        int64  `json:"callId"`
 	Action        string `json:"action" binding:"required"`
 	SupervisorURI string `json:"supervisorUri"`
+	UserID        int64  `json:"userId"`
 }
 
 // Control executes real media controls only; unsupported actions never return fake success.
@@ -24,11 +25,34 @@ func (s *Service) Control(c *gin.Context) {
 		return
 	}
 	var req controlReq
-	if err := c.ShouldBindJSON(&req); err != nil || req.CallID <= 0 {
+	if err := c.ShouldBindJSON(&req); err != nil || req.Action == "" {
 		rinfo.GinFail(c, rinfo.CodeParam, "callId/action 参数错误")
 		return
 	}
+	if req.Action == "FORCE_BUSY" || req.Action == "FORCE_READY" {
+		if req.UserID <= 0 {
+			rinfo.GinFail(c, rinfo.CodeParam, "FORCE_BUSY/FORCE_READY 需要 userId")
+			return
+		}
+		state := "BUSY"
+		if req.Action == "FORCE_READY" {
+			state = "READY"
+		}
+		if err := s.setAgentState(req.UserID, state, "supervisor:"+u.AgentNo); err != nil {
+			rinfo.GinFail(c, rinfo.CodeState, err.Error())
+			return
+		}
+		if s.qcHub != nil {
+			s.qcHub.Publish(req.Action, gin.H{"userId": req.UserID, "byUserId": u.ID})
+		}
+		rinfo.GinOK(c, gin.H{"userId": req.UserID, "state": state}, "坐席状态已强制更新")
+		return
+	}
 	if req.Action == "LISTEN" || req.Action == "BARGE" {
+		if req.CallID <= 0 {
+			rinfo.GinFail(c, rinfo.CodeParam, "LISTEN/BARGE 需要 callId")
+			return
+		}
 		host, portText, err := net.SplitHostPort(req.SupervisorURI)
 		if err != nil || host == "" {
 			rinfo.GinFail(c, rinfo.CodeParam, "LISTEN/BARGE 需要 supervisorUri=host:port")
@@ -58,6 +82,10 @@ func (s *Service) Control(c *gin.Context) {
 			msg = "督导已进入监听"
 		}
 		rinfo.GinOK(c, gin.H{"callId": req.CallID, "action": req.Action}, msg)
+		return
+	}
+	if req.CallID <= 0 {
+		rinfo.GinFail(c, rinfo.CodeParam, "HANGUP 需要 callId")
 		return
 	}
 	if req.Action != "HANGUP" {

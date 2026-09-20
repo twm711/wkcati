@@ -3,8 +3,8 @@ package agent
 
 import (
 	"database/sql"
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -69,6 +69,11 @@ func param(tx *sql.Tx, code, def string) string {
 // Dispatch 派样：项目 RUNNING+问卷 PUBLISHED 校验 → 半年原则/黑名单/重拨上限过滤 → BEGIN IMMEDIATE 派样锁
 func (s *Service) Dispatch(c *gin.Context) {
 	u := auth.From(c)
+	var agentState string
+	if err := s.db.QueryRow(`SELECT state FROM cti_agent_state WHERE user_id=?`, u.ID).Scan(&agentState); err == nil && agentState != "READY" {
+		rinfo.GinFail(c, rinfo.CodeState, "坐席当前状态 "+agentState+"，不可派样")
+		return
+	}
 	projectID := c.DefaultQuery("projectId", "1")
 	var okCall, okSample int64
 	var okName string
@@ -145,12 +150,14 @@ func (s *Service) Dispatch(c *gin.Context) {
 			var req int
 			var mn, mx sql.NullFloat64
 			if err := qrows.Scan(&qid2, &qno, &qt, &qtitle2, &req, &mn, &mx); err != nil {
-				qrows.Close(); return err
+				qrows.Close()
+				return err
 			}
 			opts := []map[string]interface{}{}
 			orows, err := tx.Query(`SELECT id,opt_text,opt_value FROM qnr_option WHERE question_id=? ORDER BY opt_no`, qid2)
 			if err != nil {
-				qrows.Close(); return err
+				qrows.Close()
+				return err
 			}
 			for orows.Next() {
 				var oid int64
@@ -180,20 +187,24 @@ func (s *Service) Dispatch(c *gin.Context) {
 var errAbort = store.ErrAbort
 
 func mnSafe(v sql.NullFloat64) interface{} {
-	if v.Valid { return v.Float64 }
+	if v.Valid {
+		return v.Float64
+	}
 	return nil
 }
 func mxSafe(v sql.NullFloat64) interface{} {
-	if v.Valid { return v.Float64 }
+	if v.Valid {
+		return v.Float64
+	}
 	return nil
 }
 
 type answerReq struct {
-	CallID       int64     `json:"callId" binding:"required"`
-	QuestionID   int64     `json:"questionId" binding:"required"`
-	OptionIDs    []int64   `json:"optionIds"`
-	AnswerText   string    `json:"answerText"`
-	NumericValue *float64  `json:"numericValue"`
+	CallID       int64    `json:"callId" binding:"required"`
+	QuestionID   int64    `json:"questionId" binding:"required"`
+	OptionIDs    []int64  `json:"optionIds"`
+	AnswerText   string   `json:"answerText"`
+	NumericValue *float64 `json:"numericValue"`
 }
 
 // Answer 逐题实时 upsert（断点续答依据）；首题=接通；跨项目题目守卫
@@ -201,15 +212,18 @@ func (s *Service) Answer(c *gin.Context) {
 	u := auth.From(c)
 	var req answerReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误")
+		return
 	}
 	sheetID, answeredAt, err := s.answerCore(u.ID, req.CallID, req.QuestionID, req.OptionIDs, req.AnswerText, req.NumericValue)
 	var be *BizErr
 	if errors.As(err, &be) {
-		rinfo.GinFail(c, be.Code, be.Msg); return
+		rinfo.GinFail(c, be.Code, be.Msg)
+		return
 	}
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	rinfo.GinOK(c, gin.H{"sheetId": sheetID, "answeredAt": answeredAt}, "答案已实时入库（断点续答依据）")
 	s.publishQC(u, "ANSWER", req.CallID, 0, "", gin.H{"sheetId": sheetID, "questionId": req.QuestionID})
@@ -225,15 +239,18 @@ func (s *Service) Result(c *gin.Context) {
 	u := auth.From(c)
 	var req resultReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误")
+		return
 	}
 	data, msg, err := s.resultCore(u.ID, req.CallID, req.ResultCode)
 	var be *BizErr
 	if errors.As(err, &be) {
-		rinfo.GinFail(c, be.Code, be.Msg); return
+		rinfo.GinFail(c, be.Code, be.Msg)
+		return
 	}
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	if data == nil { // 幂等重复提交：读取首写结果
 		var first string
@@ -329,31 +346,38 @@ type auditReq struct {
 func (s *Service) Audit(c *gin.Context) {
 	u := auth.From(c)
 	if !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
-		rinfo.GinFail(c, rinfo.CodePermission, "需要督导及以上权限（groupAdmin）"); return
+		rinfo.GinFail(c, rinfo.CodePermission, "需要督导及以上权限（groupAdmin）")
+		return
 	}
 	var req auditReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误")
+		return
 	}
 	target := map[string]string{"PASS": "AUDITED", "REJECT": "REJECTED", "VOID": "VOID"}[req.Action]
 	if target == "" {
-		rinfo.GinFail(c, rinfo.CodeParam, "action 须为 PASS/REJECT/VOID"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "action 须为 PASS/REJECT/VOID")
+		return
 	}
 	sheetID, _ := strconv.ParseInt(c.Param("sheetId"), 10, 64)
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var status string
 		var sampleID int64
 		if err := tx.QueryRow(`SELECT status,sample_id FROM ans_sheet WHERE id=?`, sheetID).Scan(&status, &sampleID); err != nil {
-			rinfo.GinFail(c, rinfo.CodeNotFound, "答卷不存在"); return errAbort
+			rinfo.GinFail(c, rinfo.CodeNotFound, "答卷不存在")
+			return errAbort
 		}
 		if status != "SUBMITTED" {
-			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("答卷当前 %s，仅 SUBMITTED 可审核", status)); return errAbort
+			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("答卷当前 %s，仅 SUBMITTED 可审核", status))
+			return errAbort
 		}
 		remark := ""
 		if req.Remark != nil {
 			remark = *req.Remark
 		}
-		if _, err := tx.Exec(`UPDATE ans_sheet SET status=?,audit_remark=? WHERE id=?`, target, remark, sheetID); err != nil { return err }
+		if _, err := tx.Exec(`UPDATE ans_sheet SET status=?,audit_remark=? WHERE id=?`, target, remark, sheetID); err != nil {
+			return err
+		}
 		if req.Action == "REJECT" {
 			tx.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status='SUCCESS'`, sampleID)
 		}

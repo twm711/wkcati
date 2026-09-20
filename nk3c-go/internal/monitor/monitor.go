@@ -110,6 +110,7 @@ func (s *Service) BuildWall() map[string]interface{} {
 	for _, b := range base {
 		uid, agentNo, name := b.uid, b.agentNo, b.name
 		state, sampleID, callID := "READY", interface{}(nil), interface{}(nil)
+		_ = s.db.QueryRow(`SELECT state FROM cti_agent_state WHERE user_id=?`, uid).Scan(&state)
 		var sid interface{}
 		_ = s.db.QueryRow(`SELECT id FROM smp_sample WHERE owner_agent_id=? AND status='ASSIGNED' LIMIT 1`, uid).Scan(&sid)
 		if sid != nil {

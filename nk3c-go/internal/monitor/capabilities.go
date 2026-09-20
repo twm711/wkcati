@@ -19,7 +19,7 @@ func (s *Service) Capabilities(c *gin.Context) {
 		"LISTEN":      false,
 		"BARGE":       s.cti != nil,
 		"MESSAGE":     false,
-		"FORCE_BUSY":  false,
-		"FORCE_READY": false,
+		"FORCE_BUSY":  true,
+		"FORCE_READY": true,
 	}, "当前 CTI 控制能力")
 }

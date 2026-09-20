@@ -42,6 +42,12 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## 坐席状态控制（M3-17）
+
+- 新增 `cti_agent_state` SQLite/MySQL 迁移；坐席可通过 `POST /api/agent/state` 设置 `READY/BUSY/PAUSE`。
+- 督导可通过监控控制面执行 `FORCE_BUSY/FORCE_READY`；非 READY 坐席不能继续派样。
+- 监控墙读取持久化坐席状态；控制能力矩阵同步标记强制状态切换为可用。
+
 ## CTI 督导控制面第一步（M3-12）
 
 - 新增 `POST /api/monitor/control`，督导及以上可对活动 SIP 外呼/桥接发送 `HANGUP`，并通过 `BARGE + supervisorUri=host:port` 加入第三方督导 SIP leg；`TestBridgeAgentCallE2E` 已增加督导第三方 BARGE E2E。

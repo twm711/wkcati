@@ -83,6 +83,7 @@ func Build(db *store.DB) *App {
 		prj.POST("/:pid/samples", a.RequireRoles("groupAdmin"), p.ImportSamples)
 
 		api.GET("/agent/dispatch", ag.Dispatch)
+		api.POST("/agent/state", ag.State)
 		api.POST("/agent/answer", ag.Answer)
 		api.POST("/agent/result", ag.Result)
 
@@ -90,6 +91,7 @@ func Build(db *store.DB) *App {
 		api.GET("/monitor/calls", mo.Calls)
 		api.POST("/monitor/control", mo.Control)
 		api.GET("/monitor/control/capabilities", mo.Capabilities)
+		api.POST("/monitor/force-state", a.RequireRoles("groupAdmin"), mo.ForceState)
 
 		api.GET("/sheet", sheetList(db))
 		api.POST("/sheet/:sheetId/audit", ag.Audit)
