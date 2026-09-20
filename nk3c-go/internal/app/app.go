@@ -90,6 +90,7 @@ func Build(db *store.DB) *App {
 		api.GET("/sheet", sheetList(db))
 		api.POST("/sheet/:sheetId/audit", ag.Audit)
 		api.GET("/report/single", reportSingle(db))
+		api.GET("/audit/logs", auditList(db))
 
 		w := api.Group("/workorder")
 		w.GET("", wk.List)
