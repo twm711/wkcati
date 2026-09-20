@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/emiago/diago"
@@ -33,6 +34,8 @@ type OutboundCaller struct {
 	DtmfWait    time.Duration
 	OnRecorded  func(callID int64, path string) // 录音落盘回调
 	currentCall int64
+	controlMu   sync.Mutex
+	active      *ActiveCalls
 }
 
 // Dial 执行一通外呼自动调研；返回结果码提交数据（供 HTTP 响应）
@@ -65,6 +68,8 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 		slog.Warn("外呼未接通", "call", callID, "phone", task.Phone, "err", err)
 		return o.Finish(callID, "NA")
 	}
+	o.register(callID, func(ctx context.Context) error { return c.Hangup(ctx) })
+	defer o.unregister(callID)
 	defer func() { _ = c.Close() }()
 	slog.Info("外呼已接通", "call", callID, "phone", task.Phone, "questions", len(task.Questions))
 
@@ -155,4 +160,3 @@ func digitsOnly(s string) string {
 	}
 	return b.String()
 }
-

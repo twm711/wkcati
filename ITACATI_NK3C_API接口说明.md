@@ -153,3 +153,5 @@
 > `POST /api/ivr/call` 支持可选 `projectId`；转人工工单沿用该项目归属。真实 SIP 号码到项目的绑定路由仍待实现。
 
 | PUT | `/api/ivr/routes` | 督导配置主叫号码前缀→项目路由 |
+
+| POST | `/api/monitor/control` | 督导 CTI 控制；当前真实执行 `HANGUP`，其它动作明确返回未实现 |

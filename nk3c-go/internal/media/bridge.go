@@ -53,6 +53,8 @@ func (o *OutboundCaller) Bridge(ctx context.Context, callID int64, bd BridgeDriv
 		_, _, _ = o.Finish(callID, "NA") // 未接通 → NA 回池（业务规则统一）
 		return fmt.Errorf("客户未接通: %w", err)
 	}
+	o.register(callID, func(ctx context.Context) error { return cust.Hangup(ctx) })
+	defer o.unregister(callID)
 	defer cust.Close()
 	if err := bd.MarkBridgeConnect(callID); err != nil {
 		slog.Warn("接通标记失败", "err", err)
@@ -64,6 +66,7 @@ func (o *OutboundCaller) Bridge(ctx context.Context, callID int64, bd BridgeDriv
 		_ = cust.Hangup(ctx)
 		return fmt.Errorf("坐席未接通: %w", err)
 	}
+	o.register(callID, func(ctx context.Context) error { return ag.Hangup(ctx) })
 	defer ag.Close()
 	slog.Info("桥接建立（双方通话中）", "call", callID)
 

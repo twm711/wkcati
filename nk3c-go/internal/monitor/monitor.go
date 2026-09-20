@@ -14,10 +14,15 @@ type SessionKiller interface {
 	LogoutAll(userID int64) int
 }
 
+type CTIController interface {
+	Hangup(callID int64) error
+}
+
 type Service struct {
 	db       *store.DB
 	qcHub    *realtime.EventHub
 	sessions SessionKiller
+	cti      CTIController
 }
 
 func New(db *store.DB) *Service { return &Service{db: db} }
@@ -26,6 +31,8 @@ func New(db *store.DB) *Service { return &Service{db: db} }
 func (s *Service) WireQC(hub *realtime.EventHub, sk SessionKiller) {
 	s.qcHub, s.sessions = hub, sk
 }
+
+func (s *Service) WireCTI(c CTIController) { s.cti = c }
 
 // ServeQCWS 督导质检事件流：仅 groupAdmin 可订阅（403 不升级）
 func (s *Service) ServeQCWS(c *gin.Context) {
@@ -51,12 +58,14 @@ func (s *Service) ForceCheckout(c *gin.Context) {
 	}
 	var req forceCheckoutReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误")
+		return
 	}
 	var agentNo string
 	var agentID int64
 	if err := s.db.QueryRow(`SELECT id,COALESCE(agent_no,'') FROM sys_user WHERE id=?`, req.UserID).Scan(&agentID, &agentNo); err != nil {
-		rinfo.GinFail(c, rinfo.CodeNotFound, "目标用户不存在"); return
+		rinfo.GinFail(c, rinfo.CodeNotFound, "目标用户不存在")
+		return
 	}
 	var released int64
 	// 释放样本（ASSIGNED=外呼中；INCALL=桥接通话中 → 回 IDLE 池）
@@ -79,16 +88,21 @@ func (s *Service) ForceCheckout(c *gin.Context) {
 func (s *Service) BuildWall() map[string]interface{} {
 	agents := []map[string]interface{}{}
 	base := []struct {
-		uid          int64
+		uid           int64
 		agentNo, name string
 	}{}
 	arows, _ := s.db.Query(`SELECT u.id,u.agent_no,u.user_name FROM sys_user u WHERE u.agent_no IS NOT NULL AND u.status=1`)
 	for arows != nil && arows.Next() {
-		var b struct{ uid int64; agentNo, name string }
+		var b struct {
+			uid           int64
+			agentNo, name string
+		}
 		_ = arows.Scan(&b.uid, &b.agentNo, &b.name)
 		base = append(base, b)
 	}
-	if arows != nil { arows.Close() }
+	if arows != nil {
+		arows.Close()
+	}
 	for _, b := range base {
 		uid, agentNo, name := b.uid, b.agentNo, b.name
 		state, sampleID, callID := "READY", interface{}(nil), interface{}(nil)
@@ -132,7 +146,8 @@ func (s *Service) Calls(c *gin.Context) {
 	rows, err := s.db.Query(`SELECT c.id,c.sample_id,s.cust_name,c.agent_no,c.status,c.result_code,c.begin_time,c.connect_time,COALESCE(c.record_file,'')
 		FROM cti_call_record c LEFT JOIN smp_sample s ON s.id=c.sample_id ORDER BY c.id DESC LIMIT ` + limit)
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	defer rows.Close()
 	out := []map[string]interface{}{}

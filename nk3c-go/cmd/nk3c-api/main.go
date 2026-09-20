@@ -62,6 +62,7 @@ func main() {
 				}
 			},
 		}
+		a.WireCTI(srv)
 		srv.RecordDir = "recordings"
 		if ph, pp, e := net.SplitHostPort(*outbound); e == nil && ph != "" {
 			pn, _ := strconv.Atoi(pp)

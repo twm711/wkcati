@@ -34,6 +34,13 @@ type SIPServer struct {
 	Outbound *OutboundCaller // Start 后可用（外呼腿；需配 Peer 路由）
 }
 
+// Hangup implements monitor.CTIController; Outbound is populated when Start begins.
+func (s *SIPServer) Hangup(callID int64) error {
+	if s.Outbound == nil {
+		return fmt.Errorf("话务域尚未启动")
+	}
+	return s.Outbound.Hangup(callID)
+}
 
 // Start 阻塞运行（调用方包 goroutine）；ctx 取消即关停
 func (s *SIPServer) Start(ctx context.Context) error {

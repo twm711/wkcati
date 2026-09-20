@@ -29,10 +29,12 @@ import (
 )
 
 type App struct {
-	DB       *store.DB
-	Auth     *auth.Service
-	Engine   *gin.Engine
-	apiGroup *gin.RouterGroup
+	DB            *store.DB
+	Auth          *auth.Service
+	Engine        *gin.Engine
+	apiGroup      *gin.RouterGroup
+	monitor       *monitor.Service
+	ctiController media.CallController
 }
 
 func Build(db *store.DB) *App {
@@ -86,6 +88,7 @@ func Build(db *store.DB) *App {
 
 		api.GET("/monitor/wall", mo.Wall)
 		api.GET("/monitor/calls", mo.Calls)
+		api.POST("/monitor/control", mo.Control)
 
 		api.GET("/sheet", sheetList(db))
 		api.POST("/sheet/:sheetId/audit", ag.Audit)
@@ -129,7 +132,7 @@ func Build(db *store.DB) *App {
 		ivg.GET("/logs", iv.Logs)
 	}
 
-	app := &App{DB: db, Auth: a, Engine: e, apiGroup: api}
+	app := &App{DB: db, Auth: a, Engine: e, apiGroup: api, monitor: mo}
 	app.apiGroup = api
 
 	// 质检事件流：坐席动作实时广播督导 + cti_monitor_event 落库（M3）
