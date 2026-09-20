@@ -155,3 +155,5 @@
 | PUT | `/api/ivr/routes` | 督导配置主叫号码前缀→项目路由 |
 
 | POST | `/api/monitor/control` | 督导 CTI 控制；当前真实执行 `HANGUP`，其它动作明确返回未实现 |
+
+| GET | `/api/monitor/control/capabilities` | 返回实际已接通的 CTI 控制能力，避免 UI 伪造监听/插话按钮 |

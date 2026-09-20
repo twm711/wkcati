@@ -89,6 +89,7 @@ func Build(db *store.DB) *App {
 		api.GET("/monitor/wall", mo.Wall)
 		api.GET("/monitor/calls", mo.Calls)
 		api.POST("/monitor/control", mo.Control)
+		api.GET("/monitor/control/capabilities", mo.Capabilities)
 
 		api.GET("/sheet", sheetList(db))
 		api.POST("/sheet/:sheetId/audit", ag.Audit)

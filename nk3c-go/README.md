@@ -46,7 +46,7 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 - 新增 `POST /api/monitor/control`，督导及以上可对活动 SIP 外呼/桥接发送 `HANGUP`。
 - 话务域新增活动 call-leg 注册表，通话结束自动注销，避免控制已结束通话。
-- `LISTEN/BARGE/MESSAGE/FORCE_BUSY/FORCE_READY` 暂不返回假成功，当前明确返回未实现。
+- `GET /api/monitor/control/capabilities` 返回真实能力矩阵；`LISTEN/BARGE/MESSAGE/FORCE_BUSY/FORCE_READY` 暂不返回假成功，当前明确返回未实现。
 
 ## IVR 主叫号码多项目路由（M3-10）
 
