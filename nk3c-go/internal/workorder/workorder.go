@@ -17,11 +17,14 @@ type Service struct{ db *store.DB }
 func New(db *store.DB) *Service { return &Service{db: db} }
 
 // CreateFromIVR 转人工自动落单（供 IVR 模块调用）
-func (s *Service) CreateFromIVR(callID int64, callerNo, path string, ts string) (int64, error) {
+func (s *Service) CreateFromIVR(projectID, callID int64, callerNo, path string, ts string) (int64, error) {
+	if projectID == 0 {
+		projectID = 1
+	}
 	var tid int64
 	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM wko_ticket`).Scan(&tid)
 	_, err := s.db.Exec(`INSERT INTO wko_ticket(project_id,call_id,caller_no,subject,detail,status,priority,created_at)
-		VALUES(1,?,?,?,?,'PENDING','HIGH',?)`, callID, callerNo, "IVR转人工来电", "呼入菜单按键0转人工；通话轨迹："+path, ts)
+		VALUES(?,?,?,?,?,'PENDING','HIGH',?)`, projectID, callID, callerNo, "IVR转人工来电", "呼入菜单按键0转人工；通话轨迹："+path, ts)
 	if err != nil {
 		return 0, err
 	}
@@ -39,7 +42,8 @@ func (s *Service) List(c *gin.Context) {
 	q += ` ORDER BY w.id DESC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	defer rows.Close()
 	out := []map[string]interface{}{}
@@ -65,7 +69,8 @@ func (s *Service) Detail(c *gin.Context) {
 	if err := s.db.QueryRow(`SELECT w.caller_no,w.subject,w.detail,w.status,w.priority,w.remark,w.revisit_sample_id,w.created_at,u.user_name
 		FROM wko_ticket w LEFT JOIN sys_user u ON u.id=w.assigned_agent_id WHERE w.id=?`, tid).
 		Scan(&callerNo, &subject, &detail, &status, &priority, &remark, &revisit, &created, &agent); err != nil {
-		rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在"); return
+		rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在")
+		return
 	}
 	out := map[string]interface{}{"id": tid, "caller_no": callerNo, "subject": subject, "detail": detail,
 		"status": status, "priority": priority, "remark": remark.String, "created_at": created}
@@ -100,13 +105,17 @@ func (s *Service) Accept(c *gin.Context) {
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var status string
 		if err := tx.QueryRow(`SELECT status FROM wko_ticket WHERE id=?`, tid).Scan(&status); err != nil {
-			rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在"); return errAbortW
+			rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在")
+			return errAbortW
 		}
 		if status != "PENDING" {
-			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("工单当前 %s，仅 PENDING 可受理", status)); return errAbortW
+			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("工单当前 %s，仅 PENDING 可受理", status))
+			return errAbortW
 		}
 		if _, err := tx.Exec(`UPDATE wko_ticket SET status='ACCEPTED',assigned_agent_id=?,accepted_at=? WHERE id=?`,
-			u.ID, store.NowISO(), tid); err != nil { return err }
+			u.ID, store.NowISO(), tid); err != nil {
+			return err
+		}
 		rinfo.GinOK(c, gin.H{"ticketId": tid, "status": "ACCEPTED", "agent": u.Name}, "工单已受理")
 		return errAbortW
 	})
@@ -121,7 +130,8 @@ func (s *Service) advance(c *gin.Context, target string) {
 	u := auth.From(c)
 	tid, _ := strconv.ParseInt(c.Param("tid"), 10, 64)
 	if target == "CLOSED" && !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
-		rinfo.GinFail(c, rinfo.CodePermission, "归档需要督导及以上权限（groupAdmin）"); return
+		rinfo.GinFail(c, rinfo.CodePermission, "归档需要督导及以上权限（groupAdmin）")
+		return
 	}
 	var body struct {
 		Remark *string `json:"remark"`
@@ -139,10 +149,12 @@ func (s *Service) advance(c *gin.Context, target string) {
 		var status string
 		var revisit *int64
 		if err := tx.QueryRow(`SELECT status,revisit_sample_id FROM wko_ticket WHERE id=?`, tid).Scan(&status, &revisit); err != nil {
-			rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在"); return errAbortW
+			rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在")
+			return errAbortW
 		}
 		if status != wkoPrev[target] {
-			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("工单当前 %s，不能直接置 %s", status, target)); return errAbortW
+			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("工单当前 %s，不能直接置 %s", status, target))
+			return errAbortW
 		}
 		if target == "CLOSED" && revisit == nil { // 归档 → 自动生成回访样本进项目1（P0 行96）
 			var sid int64
@@ -185,4 +197,4 @@ func (s *Service) advance(c *gin.Context, target string) {
 var errAbortW = store.ErrAbort
 
 func (s *Service) Resolve(c *gin.Context) { s.advance(c, "RESOLVED") }
-func (s *Service) Close(c *gin.Context)  { s.advance(c, "CLOSED") }
+func (s *Service) Close(c *gin.Context)   { s.advance(c, "CLOSED") }

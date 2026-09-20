@@ -13,18 +13,18 @@ import (
 
 // NodeState SIP 驱动可见的会话/节点快照（不含 gin/内部类型）
 type NodeState struct {
-	SessionID string
-	CallerNo  string
+	SessionID  string
+	CallerNo   string
 	RecordFile string // 录音落盘路径（呼入腿）
-	NodeID    string
-	NodeType  string
-	Text      string
-	Branches  map[string]string // menu 分支：键→下一节点
-	Options   map[string]string // question 选项：键→答案文本
-	Answers   map[string]string
-	Done      bool
-	Outcome   string
-	Invalid   bool // 上一按键无效，需重播当前节点
+	NodeID     string
+	NodeType   string
+	Text       string
+	Branches   map[string]string // menu 分支：键→下一节点
+	Options    map[string]string // question 选项：键→答案文本
+	Answers    map[string]string
+	Done       bool
+	Outcome    string
+	Invalid    bool // 上一按键无效，需重播当前节点
 }
 
 func (s *Service) snapshot(sid string, cur node, sess *session, invalid bool) NodeState {
@@ -40,7 +40,7 @@ func (s *Service) snapshot(sid string, cur node, sess *session, invalid bool) No
 
 // StartSIP 呼入接续（真实话机入口；与 HTTP StartCall 同一走线）
 func (s *Service) StartSIP(callerNo string) (NodeState, error) {
-	sid, cur, sess, err := s.startCore(callerNo)
+	sid, cur, sess, err := s.startCore(callerNo, 1)
 	if err != nil {
 		return NodeState{}, err
 	}
@@ -71,7 +71,7 @@ func (s *Service) HangupSIP(sid string) (NodeState, error) {
 
 // ── 核心实现（gin handler 与 SIP 驱动共同调用）─────────────────────────
 
-func (s *Service) startCore(callerNo string) (string, node, *session, error) {
+func (s *Service) startCore(callerNo string, projectID int64) (string, node, *session, error) {
 	f, nodes, err := s.flowNodes()
 	if err != nil {
 		return "", node{}, nil, err
@@ -80,7 +80,10 @@ func (s *Service) startCore(callerNo string) (string, node, *session, error) {
 	if callerNo == "" {
 		callerNo = "139" + sid[:8]
 	}
-	sess := &session{CallerNo: callerNo, Answers: map[string]string{}, Start: store.NowISO()}
+	if projectID == 0 {
+		projectID = 1
+	}
+	sess := &session{CallerNo: callerNo, ProjectID: projectID, Answers: map[string]string{}, Start: store.NowISO()}
 	sessions[sid] = sess
 	n := s.enter(nodes, nodes[f.Entry], sess)
 	sess.Current = n.ID

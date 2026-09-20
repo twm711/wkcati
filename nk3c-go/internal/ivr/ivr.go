@@ -36,6 +36,7 @@ type flow struct {
 
 type session struct {
 	CallerNo   string
+	ProjectID  int64
 	Transcript []map[string]interface{}
 	Path       []string
 	Answers    map[string]string
@@ -66,7 +67,8 @@ func (s *Service) flowNodes() (flow, map[string]node, error) {
 func (s *Service) GetFlow(c *gin.Context) {
 	var name, raw, updated string
 	if err := s.db.QueryRow(`SELECT name,flow_json,updated_at FROM ivr_flow WHERE id=1`).Scan(&name, &raw, &updated); err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	var f flow
 	_ = json.Unmarshal([]byte(raw), &f)
@@ -128,7 +130,7 @@ func validate(f flow) string {
 }
 
 type flowReq struct {
-	Name string    `json:"name"`
+	Name string       `json:"name"`
 	Flow flowValidate `json:"flow" binding:"required"`
 }
 type flowValidate struct {
@@ -139,17 +141,20 @@ type flowValidate struct {
 func (s *Service) PutFlow(c *gin.Context) {
 	var req flowReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误")
+		return
 	}
 	f := flow{Entry: req.Flow.Entry, Nodes: req.Flow.Nodes}
 	if msg := validate(f); msg != "" {
-		rinfo.GinFail(c, rinfo.CodeParam, "流程校验失败："+msg); return
+		rinfo.GinFail(c, rinfo.CodeParam, "流程校验失败："+msg)
+		return
 	}
 	raw, _ := json.Marshal(f)
 	_, err := s.db.Exec(`UPDATE ivr_flow SET name=?,flow_json=?,updated_at=? WHERE id=1`,
 		req.Name, string(raw), store.NowISO())
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	rinfo.GinOK(c, true, "流程已保存并即时生效（下一通呼入按新流程走线）")
 }
@@ -207,18 +212,20 @@ func (s *Service) finalize(sess *session) {
 	if strings.HasPrefix(sess.Outcome, "TRANSFER") && s.wk != nil {
 		var callID int64
 		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM cti_call_record`).Scan(&callID)
-		s.wk.CreateFromIVR(callID, sess.CallerNo, strings.Join(sess.Path, " → "), end)
+		s.wk.CreateFromIVR(sess.ProjectID, callID, sess.CallerNo, strings.Join(sess.Path, " → "), end)
 	}
 }
 
 func (s *Service) StartCall(c *gin.Context) {
 	var body struct {
-		CallerNo string `json:"callerNo"`
+		CallerNo  string `json:"callerNo"`
+		ProjectID int64  `json:"projectId"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	sid, cur, sess, err := s.startCore(body.CallerNo)
+	sid, cur, sess, err := s.startCore(body.CallerNo, body.ProjectID)
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	rinfo.GinOK(c, gin.H{"sessionId": sid, "callerNo": sess.CallerNo, "node": cur,
 		"transcript": sess.Transcript, "answers": sess.Answers, "done": sess.Done, "outcome": sess.Outcome}, "呼入已接入")
@@ -232,23 +239,29 @@ type inputReq struct {
 func (s *Service) Input(c *gin.Context) {
 	sid := c.Param("sid")
 	if sess := sessions[sid]; sess == nil {
-		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）"); return
+		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）")
+		return
 	} else if sess.Done {
-		rinfo.GinFail(c, rinfo.CodeConflict, "通话已结束"); return
+		rinfo.GinFail(c, rinfo.CodeConflict, "通话已结束")
+		return
 	}
 	var req inputReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		rinfo.GinFail(c, rinfo.CodeParam, "参数错误"); return
+		rinfo.GinFail(c, rinfo.CodeParam, "参数错误")
+		return
 	}
 	cur, sess, invalid, err := s.keyCore(sid, req.Key, req.Message)
 	if err == errSessionNotFound {
-		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）"); return
+		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）")
+		return
 	}
 	if err == errSessionDone {
-		rinfo.GinFail(c, rinfo.CodeConflict, "通话已结束"); return
+		rinfo.GinFail(c, rinfo.CodeConflict, "通话已结束")
+		return
 	}
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	if invalid {
 		rinfo.GinOK(c, gin.H{"sessionId": sid, "node": cur, "transcript": sess.Transcript, "answers": sess.Answers,
@@ -263,10 +276,12 @@ func (s *Service) Hangup(c *gin.Context) {
 	sid := c.Param("sid")
 	sess, err := s.hangupCore(sid)
 	if err == errSessionNotFound {
-		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）"); return
+		rinfo.GinFail(c, rinfo.CodeNotFound, "会话不存在（可能已被重置）")
+		return
 	}
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	rinfo.GinOK(c, gin.H{"sessionId": sid, "outcome": sess.Outcome, "answers": sess.Answers}, "主叫挂断，通话已落库")
 }
@@ -275,7 +290,8 @@ func (s *Service) Logs(c *gin.Context) {
 	rows, err := s.db.Query(`SELECT id,caller_no,start_time,end_time,outcome,path_json,answers_json,COALESCE(record_file,'')
 		FROM ivr_call_log ORDER BY id DESC LIMIT 20`)
 	if err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
 	}
 	defer rows.Close()
 	out := []map[string]interface{}{}
