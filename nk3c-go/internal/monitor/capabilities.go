@@ -18,7 +18,7 @@ func (s *Service) Capabilities(c *gin.Context) {
 		"HANGUP":      s.cti != nil,
 		"LISTEN":      false,
 		"BARGE":       s.cti != nil,
-		"MESSAGE":     false,
+		"MESSAGE":     s.msgHub != nil,
 		"FORCE_BUSY":  true,
 		"FORCE_READY": true,
 	}, "当前 CTI 控制能力")

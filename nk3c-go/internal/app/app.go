@@ -140,8 +140,10 @@ func Build(db *store.DB) *App {
 
 	// 质检事件流：坐席动作实时广播督导 + cti_monitor_event 落库（M3）
 	qcHub := realtime.NewEventHub()
+	msgHub := realtime.NewMessageHub()
 	ag.SetNotifier(qcHub)
 	mo.WireQC(qcHub, a)
+	mo.WireMessage(msgHub)
 
 	// 监控墙 WebSocket（?token= 鉴权；2s 推送墙面快照）
 	hub := realtime.NewHub(mo.BuildWall)
@@ -150,6 +152,7 @@ func Build(db *store.DB) *App {
 	})
 	// 质检 WS（仅 groupAdmin；鉴权后角色校验 403 不升级）
 	e.GET("/api/qc/ws", a.AuthQuery(), mo.ServeQCWS)
+	e.GET("/api/agent/ws", a.AuthQuery(), mo.ServeMessageWS)
 	// 强签坐席（仅 groupAdmin）
 	api.POST("/qc/force-checkout", mo.ForceCheckout)
 	// 导出中心（?token= 鉴权；window.open 场景）

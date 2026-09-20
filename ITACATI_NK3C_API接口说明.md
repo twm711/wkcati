@@ -160,3 +160,5 @@
 
 | POST | `/api/agent/state` | 坐席设置 READY/BUSY/PAUSE 状态 |
 | POST | `/api/monitor/force-state` | 督导强制设置坐席状态 |
+
+| GET | `/api/agent/ws?token=` | 坐席定向督导消息 WebSocket |

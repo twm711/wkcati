@@ -15,6 +15,7 @@ type controlReq struct {
 	Action        string `json:"action" binding:"required"`
 	SupervisorURI string `json:"supervisorUri"`
 	UserID        int64  `json:"userId"`
+	Text          string `json:"text"`
 }
 
 // Control executes real media controls only; unsupported actions never return fake success.
@@ -46,6 +47,22 @@ func (s *Service) Control(c *gin.Context) {
 			s.qcHub.Publish(req.Action, gin.H{"userId": req.UserID, "byUserId": u.ID})
 		}
 		rinfo.GinOK(c, gin.H{"userId": req.UserID, "state": state}, "坐席状态已强制更新")
+		return
+	}
+	if req.Action == "MESSAGE" {
+		if req.UserID <= 0 || req.Text == "" || len(req.Text) > 1000 {
+			rinfo.GinFail(c, rinfo.CodeParam, "MESSAGE 需要 userId 和 1-1000 字符 text")
+			return
+		}
+		if s.msgHub == nil {
+			rinfo.GinFail(c, rinfo.CodeState, "坐席消息通道未启动")
+			return
+		}
+		s.msgHub.Publish(req.UserID, req.Text, u.ID)
+		if s.qcHub != nil {
+			s.qcHub.Publish("MESSAGE", gin.H{"userId": req.UserID, "byUserId": u.ID})
+		}
+		rinfo.GinOK(c, gin.H{"userId": req.UserID}, "消息已发送")
 		return
 	}
 	if req.Action == "LISTEN" || req.Action == "BARGE" {

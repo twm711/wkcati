@@ -42,6 +42,13 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 - web：项目详情抽屉新增「导出 CSV/XLSX/SPSS」直链下载按钮（window.open + ?token=）。
 - E2E：`internal/app/export_ws_test.go` ×4（CSV 可解析、XLSX 双表、SAV 逐记录解析（$FL2/变量记录/rec7/999 终止/数值 9.0）、WS 首帧 wall+无 token 401）。
 
+## 坐席督导消息（M3-18）
+
+- 新增 `/api/agent/ws?token=` 定向 WebSocket 消息通道。
+- 督导通过 `POST /api/monitor/control` 的 `MESSAGE` 动作向指定坐席推送消息。
+- 坐席工作台显示督导消息提醒；消息不广播给其它坐席。
+- 能力矩阵中的 `MESSAGE` 已接通。
+
 ## 坐席状态控制（M3-17）
 
 - 新增 `cti_agent_state` SQLite/MySQL 迁移；坐席可通过 `POST /api/agent/state` 设置 `READY/BUSY/PAUSE`。

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { rawSession } from '../api'
 import { Card, Button, Descriptions, Tag, Radio, InputNumber, Input, Select, App, Space, Alert, Typography, Empty, Spin } from 'antd'
 import { PhoneOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { api } from '../api'
@@ -34,6 +35,15 @@ export default function Agent() {
   const [values, setValues] = useState<Record<number, { optionIds?: number[]; numericValue?: number | null; answerText?: string }>>({})
   const [resultCode, setResultCode] = useState<string>('SUCCESS')
   const [lastResult, setLastResult] = useState<Record<string, unknown> | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    const s = rawSession(); if (!s) return
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const ws = new WebSocket(`${proto}://${location.host}/api/agent/ws?token=${encodeURIComponent(s.sessionId)}`)
+    ws.onmessage = (ev) => { try { const f = JSON.parse(ev.data as string) as { type: string; text?: string }; if (f.type === 'message') setNotice(f.text ?? '') } catch { /* ignore */ } }
+    return () => ws.close()
+  }, [])
 
   const dispatch = async () => {
     setLoading(true)
@@ -86,6 +96,7 @@ export default function Agent() {
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
+      {notice && <Alert message="督导消息" description={notice} type="info" closable onClose={() => setNotice(null)} style={{ width: '100%' }} />}
       <Card
         title={<span><PhoneOutlined /> 坐席工作台（外呼作答）</span>}
         extra={

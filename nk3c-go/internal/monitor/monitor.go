@@ -27,6 +27,7 @@ type Service struct {
 	qcHub    *realtime.EventHub
 	sessions SessionKiller
 	cti      CTIController
+	msgHub   *realtime.MessageHub
 }
 
 func New(db *store.DB) *Service { return &Service{db: db} }
@@ -36,7 +37,11 @@ func (s *Service) WireQC(hub *realtime.EventHub, sk SessionKiller) {
 	s.qcHub, s.sessions = hub, sk
 }
 
-func (s *Service) WireCTI(c CTIController) { s.cti = c }
+func (s *Service) WireCTI(c CTIController)            { s.cti = c }
+func (s *Service) WireMessage(h *realtime.MessageHub) { s.msgHub = h }
+func (s *Service) ServeMessageWS(c *gin.Context) {
+	s.msgHub.ServeWS(auth.From(c).ID, c.Writer, c.Request)
+}
 
 // ServeQCWS 督导质检事件流：仅 groupAdmin 可订阅（403 不升级）
 func (s *Service) ServeQCWS(c *gin.Context) {
