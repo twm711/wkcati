@@ -8,6 +8,7 @@ interface Wall { agents: WallAgent[]; summary: { dialCount: number; connectCount
 interface WallFrame { type: string; data: Wall; ts: number }
 interface CallRow { id: number; sample_id: unknown; cust_name: unknown; agent_no: string; status: string; result_code: unknown; begin_time: string; connect_time: unknown }
 interface SheetRow { id: number; call_id: number; project_id: number; sample_id: number; agent_id: number; qnr_id: number; qnr_version: string; status: string; audit_remark: string }
+interface QCEvent { type: 'qc'; event: string; data: Record<string, unknown>; ts: number }
 
 const STATE_COLOR: Record<string, string> = { READY: 'default', DIALING: 'processing', TALKING: 'warning' }
 
@@ -18,6 +19,8 @@ export default function Monitor() {
   const [sheets, setSheets] = useState<SheetRow[]>([])
   const [auditTarget, setAuditTarget] = useState<{ row: SheetRow; action: 'PASS' | 'REJECT' } | null>(null)
   const [wsLive, setWsLive] = useState(false)
+  const [qcWsLive, setQcWsLive] = useState(false)
+  const [qcEvents, setQcEvents] = useState<QCEvent[]>([])
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const canAudit = hasRole('groupAdmin')
@@ -67,6 +70,42 @@ export default function Monitor() {
       if (timer.current) clearInterval(timer.current)
     }
   }, [load])
+
+  // 质检事件流：仅督导订阅，断线自动重连；事件按最新在前保留 50 条
+  useEffect(() => {
+    if (!canAudit) return
+    const s = rawSession()
+    if (!s) return
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    let closed = false
+    let retry: ReturnType<typeof setTimeout> | null = null
+    let ws: WebSocket | null = null
+    const connect = () => {
+      if (closed) return
+      ws = new WebSocket(`${proto}://${location.host}/api/qc/ws?token=${encodeURIComponent(s.sessionId)}`)
+      ws.onopen = () => setQcWsLive(true)
+      ws.onmessage = (ev) => {
+        try {
+          const frame = JSON.parse(ev.data as string) as QCEvent
+          if (frame.type === 'qc' && frame.event) {
+            setQcEvents((old) => [frame, ...old].slice(0, 50))
+          }
+        } catch { /* 忽略坏帧 */ }
+      }
+      ws.onerror = () => setQcWsLive(false)
+      ws.onclose = () => {
+        setQcWsLive(false)
+        if (!closed) retry = setTimeout(connect, 5000)
+      }
+    }
+    connect()
+    return () => {
+      closed = true
+      if (retry) clearTimeout(retry)
+      ws?.close()
+      setQcWsLive(false)
+    }
+  }, [canAudit])
 
   const forceCheckout = async (userId: number, agentNo: string) => {
     try {
@@ -140,6 +179,35 @@ export default function Monitor() {
           ))}
         </Row>
       </Card>
+
+      {canAudit && (
+        <Card
+          title={
+            <Space>
+              质检事件流
+              <Tag color={qcWsLive ? 'green' : 'orange'} icon={qcWsLive ? <WifiOutlined /> : <LinkOutlined />}>
+                {qcWsLive ? '实时' : '连接中/重连中'}
+              </Tag>
+            </Space>
+          }
+          extra={<Button size="small" onClick={() => setQcEvents([])}>清空</Button>}
+        >
+          <Table<QCEvent>
+            rowKey={(row) => `${row.ts}-${row.event}-${String(row.data.callId ?? row.data.targetUserId ?? '')}`}
+            size="small"
+            pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            dataSource={qcEvents}
+            locale={{ emptyText: qcWsLive ? '等待坐席动作事件…' : '质检流尚未连接' }}
+            columns={[
+              { title: '时间', width: 90, render: (_, row) => new Date(row.ts).toLocaleTimeString() },
+              { title: '事件', dataIndex: 'event', width: 110, render: (v) => <Tag color={v === 'FORCE_LOGOUT' ? 'red' : v === 'RESULT' ? 'green' : 'blue'}>{String(v)}</Tag> },
+              { title: '坐席', render: (_, row) => String(row.data.agentNo ?? row.data.targetAgentNo ?? '-') },
+              { title: '话务/样本', render: (_, row) => `${row.data.callId != null ? `话务 #${row.data.callId}` : '-'}${row.data.sampleId != null ? ` / 样本 #${row.data.sampleId}` : ''}` },
+              { title: '详情', render: (_, row) => row.data.detail != null ? String(row.data.detail) : row.data.releasedSamples != null ? `回池 ${row.data.releasedSamples}，注销 ${row.data.sessions ?? 0}` : '-' },
+            ]}
+          />
+        </Card>
+      )}
 
       <Card title="话务流水（最近 12 条）">
         <Table<CallRow>
