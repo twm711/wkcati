@@ -167,4 +167,4 @@
 - 新增 `TestHalfOpenLineAllowsSingleProbe`，使用两个并发服务实例验证 OPEN 到期时仅一个请求能成功取得 HALF_OPEN 探测线路；SQLite 重复运行 5 次通过。
 - 新增 `/api/monitor/line-health`：按租户汇总主叫线路总呼叫、接通、失败、失败率和最近话务时间；样本量至少 10 且失败率不低于 50% 时标记 `degraded`。
 - 新增 `cti_outbound_line` 线路模型及 `/api/monitor/lines` 查询、`POST /api/monitor/lines` 配置接口，支持线路启停、优先级、容量和 active_calls 状态；媒体外呼会优先按租户、启用状态、优先级和剩余容量原子占用线路，呼叫结束释放 active_calls，无可用数据库线路时兼容启动参数路由；新增线路熔断字段，连续 5 次失败进入 OPEN、5 分钟后允许再次尝试，线路列表展示 circuitState/failureStreak/openedUntil；线路选择增加单探测竞争：OPEN 且熔断窗口到期时，只有成功将状态原子改为 HALF_OPEN 的请求可占用探测容量，其余请求重试选择；新增 `cti_line_circuit_event` 记录线路 CLOSED/OPEN/HALF_OPEN 状态变化、关联话务和结果码；新增 `/api/monitor/line-events` 按租户查询线路熔断状态时间线；线路事件使用数据库自增 ID，避免多实例 MAX(id)+1 冲突；新增 React 外呼线路页面，展示线路容量、熔断状态和事件时间线，并支持新增线路；新增 `cti_outbound_line_lease`，线路占用绑定 call_id 和 90 秒 lease_until，正常呼叫按 call_id 释放；媒体外呼每 30 秒续期线路租约，服务启动和 30 秒后台任务清理过期线路租约并修复 active_calls。
-- `web/node_modules` 不存在，`npx tsc --noEmit` 尚未执行。
+- 已临时安装前端依赖并执行 `npx tsc --noEmit`，检查通过；`node_modules` 为生成目录，不纳入提交。
