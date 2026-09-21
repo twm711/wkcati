@@ -1021,10 +1021,10 @@ func (s *Service) SkipPreview(c *gin.Context) {
 func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 	var callID int64
 	err := s.db.Tx(func(tx *sql.Tx) error {
-		var pid, maxConcurrent int64
+		var pid, maxConcurrent, lastSamples int64
 		var mode string
-		var abandonTarget float64
-		if err := tx.QueryRow(`SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode IN ('PROGRESSIVE','PREDICTIVE') AND p.status='RUNNING' ORDER BY d.project_id LIMIT 1`).Scan(&pid, &mode, &maxConcurrent, &abandonTarget); err != nil {
+		var abandonTarget, currentMultiplier float64
+		if err := tx.QueryRow(`SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.current_multiplier,d.last_sample_count FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode IN ('PROGRESSIVE','PREDICTIVE') AND p.status='RUNNING' ORDER BY d.project_id LIMIT 1`).Scan(&pid, &mode, &maxConcurrent, &abandonTarget, &currentMultiplier, &lastSamples); err != nil {
 			return err
 		}
 		var active int64
@@ -1046,7 +1046,11 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 				connectRate = float64(connected) / float64(total)
 				abandonRate = float64(abandoned) / float64(total) * 100
 			}
-			multiplier := 1.0 + (1.0 - connectRate)
+			multiplier := 1.0
+			minSamples, _ := strconv.Atoi(param(tx, "predict.min.samples", "20"))
+			if total >= int64(minSamples) {
+				multiplier = 1.0 + (1.0 - connectRate)
+			}
 			// 呼损高于目标时立即收缩，明显低于目标时才小幅增加，避免振荡。
 			if abandonTarget > 0 && abandonRate > abandonTarget {
 				multiplier *= 0.5
@@ -1061,6 +1065,28 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 			}
 			if multiplier > maxMultiplier {
 				multiplier = maxMultiplier
+			}
+			if total < int64(minSamples) {
+				if currentMultiplier <= 0 {
+					currentMultiplier = 1.0
+				}
+				multiplier = currentMultiplier
+			} else {
+				alpha, _ := strconv.ParseFloat(param(tx, "predict.smoothing.alpha", "0.30"), 64)
+				if alpha <= 0 || alpha > 1 {
+					alpha = 0.30
+				}
+				if currentMultiplier <= 0 {
+					currentMultiplier = 1.0
+				}
+				multiplier = currentMultiplier*(1-alpha) + multiplier*alpha
+				if multiplier < minMultiplier {
+					multiplier = minMultiplier
+				}
+				if multiplier > maxMultiplier {
+					multiplier = maxMultiplier
+				}
+				_, _ = tx.Exec(`UPDATE cti_dial_strategy SET current_multiplier=?,last_sample_count=?,updated_at=? WHERE project_id=?`, multiplier, total, store.NowFor(s.db.Driver), pid)
 			}
 			limit = int64(float64(ready) * multiplier)
 			if limit < 1 {
