@@ -143,7 +143,7 @@
 7. **生产媒体**：SIP/TLS/SRTP、REGISTER/鉴权、NAT/媒体策略、录音对象存储、加密、留存、回放授权、桥接录音混音。
 8. **安全与可观测性**：密码哈希、Redis/session TTL、Origin 白名单、限流、metrics/tracing/告警、审计留存、备份恢复演练。
 
-本轮开始建立拨号策略模型：新增 `cti_dial_strategy` 及 `/api/monitor/dial-strategies` 查询/配置接口，支持 `PREDICTIVE`、`PROGRESSIVE`、`PREVIEW`、最大并发、呼损目标和预览秒数；当前已接入项目级最大并发限制：派样和等待调度均会统计项目 LEASED 任务并在达到 max_concurrent 时进入 WAITING；新增 PREVIEW 预览接口：锁定样本 30 秒、支持确认转 LEASED 话务或跳过回池；确认接口直接返回完整问卷上下文，React 坐席工作台确认后直接进入问卷作答状态；新增预览样本、倒计时、确认拨打和跳过操作；新增 `/api/monitor/dial-runtime` 返回项目拨号模式、activeCalls、maxConcurrent、availableAgents、headroom 和 running 状态；新增自动拨号任务领取器：每 2 秒在 SIP 外呼腿已挂载时，按 PROGRESSIVE/PREDICTIVE 策略、项目 max_concurrent、READY 坐席、队列 capacity 和可用样本原子创建 LEASED 话务，并异步调用媒体 Dial；PREDICTIVE 根据历史接通率、READY 坐席数和 abandon_target 计算动态并发上限；PREDICTIVE 当前已接入基础动态并发上限和 BREAKOFF 呼损率反馈：呼损高于 abandon_target 时收缩倍率，明显低于目标时小幅增加；运行态接口同时返回 abandonRate；但仍未形成生产级呼损闭环，渐进节奏、预测倍率校准和运营商真实验证仍需继续。
+本轮开始建立拨号策略模型：新增 `cti_dial_strategy` 及 `/api/monitor/dial-strategies` 查询/配置接口，支持 `PREDICTIVE`、`PROGRESSIVE`、`PREVIEW`、最大并发、呼损目标和预览秒数；当前已接入项目级最大并发限制：派样和等待调度均会统计项目 LEASED 任务并在达到 max_concurrent 时进入 WAITING；新增 PREVIEW 预览接口：锁定样本 30 秒、支持确认转 LEASED 话务或跳过回池；确认接口直接返回完整问卷上下文，React 坐席工作台确认后直接进入问卷作答状态；新增预览样本、倒计时、确认拨打和跳过操作；新增 `/api/monitor/dial-runtime` 返回项目拨号模式、activeCalls、maxConcurrent、availableAgents、headroom 和 running 状态；新增自动拨号任务领取器：每 2 秒在 SIP 外呼腿已挂载时，按 PROGRESSIVE/PREDICTIVE 策略、项目 max_concurrent、READY 坐席、队列 capacity 和可用样本原子创建 LEASED 话务，并异步调用媒体 Dial；PREDICTIVE 根据历史接通率、READY 坐席数和 abandon_target 计算动态并发上限；PREDICTIVE 当前已接入 15 分钟可配置滑动窗口、基础动态并发上限和 BREAKOFF 呼损率反馈：呼损高于 abandon_target 时收缩倍率，明显低于目标时小幅增加；倍率具有可配置的最小/最大边界；运行态接口同时返回 abandonRate；但仍未形成生产级呼损闭环，渐进节奏、预测倍率校准和运营商真实验证仍需继续。
 
 ## 6. P2 改进项
 

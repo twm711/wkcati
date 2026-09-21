@@ -1034,7 +1034,12 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 			var ready int64
 			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_agent_state st JOIN sys_user u ON u.id=st.user_id WHERE st.state='READY' AND u.tenant_id=(SELECT tenant_id FROM prj_project WHERE id=?)`, pid).Scan(&ready)
 			var total, connected, abandoned int64
-			_ = tx.QueryRow(`SELECT COUNT(*),COALESCE(SUM(CASE WHEN result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN result_code='BREAKOFF' THEN 1 ELSE 0 END),0) FROM cti_call_record WHERE project_id=? AND status='CLOSED'`, pid).Scan(&total, &connected, &abandoned)
+			windowMinutes, _ := strconv.Atoi(param(tx, "predict.window.minutes", "15"))
+			if windowMinutes <= 0 {
+				windowMinutes = 15
+			}
+			cutoff := store.TimeFor(s.db.Driver, time.Now().UTC().Add(-time.Duration(windowMinutes)*time.Minute))
+			_ = tx.QueryRow(`SELECT COUNT(*),COALESCE(SUM(CASE WHEN result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN result_code='BREAKOFF' THEN 1 ELSE 0 END),0) FROM cti_call_record WHERE project_id=? AND status='CLOSED' AND end_time>=?`, pid, cutoff).Scan(&total, &connected, &abandoned)
 			connectRate := 0.5
 			abandonRate := 0.0
 			if total > 0 {
@@ -1048,6 +1053,14 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 			}
 			if abandonTarget > 0 && abandonRate < abandonTarget/2 {
 				multiplier *= 1.1
+			}
+			minMultiplier, _ := strconv.ParseFloat(param(tx, "predict.multiplier.min", "0.50"), 64)
+			maxMultiplier, _ := strconv.ParseFloat(param(tx, "predict.multiplier.max", "3.00"), 64)
+			if multiplier < minMultiplier {
+				multiplier = minMultiplier
+			}
+			if multiplier > maxMultiplier {
+				multiplier = maxMultiplier
 			}
 			limit = int64(float64(ready) * multiplier)
 			if limit < 1 {
