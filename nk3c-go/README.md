@@ -27,7 +27,7 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 - `pkg/rinfo` ResultInfo 统一响应（恒 HTTP 200 + 业务码 0/4001/4010/4031/4032/4041/4091/4092/5000）
 - `pkg/ids` 雪花 ID（JSON 序列化为字符串，规避前端 Long 精度丢失）
-- `internal/store` 双方言数据层 + 嵌入式迁移（18 表 + 种子）
+- `internal/store` 双方言数据层 + 嵌入式迁移（18 表 + 种子；租户边界迁移已开始，完整数据域隔离尚未完成）
 - `internal/auth|project|agent|monitor|workorder|ivr` 六大业务域
 - `internal/media` 话务域（M2）：diago SIP 服务器（呼入 IVR + 外呼自动调研 + B2BUA 桥接）+ IvrDriver/AgentDriver 接口 + 合成提示音 + 录音（audio_tap 单消费者：tap 直通层叠 RTP 事件检测）
 - `internal/app` 装配与路由

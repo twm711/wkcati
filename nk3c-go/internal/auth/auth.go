@@ -35,10 +35,11 @@ func (s *Service) Login(c *gin.Context) {
 		UserName string
 		AgentNo  *string
 		Roles    string
+		TenantID int64
 	}
-	err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles FROM sys_user
+	err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles,tenant_id FROM sys_user
 		WHERE login_name=? AND password=? AND status=1`, req.LoginName, req.Password).
-		Scan(&u.ID, &u.UserName, &u.AgentNo, &u.Roles)
+		Scan(&u.ID, &u.UserName, &u.AgentNo, &u.Roles, &u.TenantID)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeParam, "登录名或密码错误")
 		return
@@ -53,7 +54,7 @@ func (s *Service) Login(c *gin.Context) {
 	}
 	rinfo.GinOK(c, gin.H{
 		"sessionId": token, "userId": u.ID, "userName": u.UserName,
-		"agentNo": agentNo, "roles": strings.Split(u.Roles, ","),
+		"agentNo": agentNo, "tenantId": u.TenantID, "roles": strings.Split(u.Roles, ","),
 	}, "登录成功")
 }
 
@@ -67,10 +68,11 @@ func (s *Service) Logout(c *gin.Context) {
 
 // User 当前会话用户信息（业务层取用）
 type User struct {
-	ID      int64
-	Name    string
-	AgentNo string
-	Roles   []string
+	ID       int64
+	Name     string
+	AgentNo  string
+	TenantID int64
+	Roles    []string
 }
 
 func bearer(c *gin.Context) string {
@@ -88,8 +90,8 @@ func (s *Service) user(tok string) *User {
 	var u User
 	var roles string
 	var agentNo *string
-	if err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles FROM sys_user WHERE id=? AND status=1`, uid).
-		Scan(&u.ID, &u.Name, &agentNo, &roles); err != nil {
+	if err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles,tenant_id FROM sys_user WHERE id=? AND status=1`, uid).
+		Scan(&u.ID, &u.Name, &agentNo, &roles, &u.TenantID); err != nil {
 		return nil
 	}
 	if agentNo != nil {

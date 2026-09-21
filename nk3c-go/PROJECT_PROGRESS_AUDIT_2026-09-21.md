@@ -112,9 +112,11 @@
 
 `flow_json`、`path_json`、`answers_json`、`detail`、`conditions_json` 等使用 `VARCHAR(255)`，真实问卷/IVR/审计/轨迹很容易超过 255；应使用 JSON/TEXT，并验证 MySQL strict mode。
 
-### P0-4：多租户/数据域隔离不存在
+### P0-4：多租户/数据域隔离（已开始修复，仍未完成）
 
-没有 tenant_id/org_id/group_id 等列、上下文和查询约束；拥有同一角色的用户可能看到/操作全库项目、样本、工单、录音、导出。生产多租户必须阻断上线。
+本轮新增 SQLite 007 / MySQL 009：`sys_user.tenant_id`、`prj_project.tenant_id`，登录用户携带 TenantID，项目列表、详情、创建和项目变更接口已增加首层租户边界；domainAdmin 保留跨租户能力。
+
+仍未完成：样本、话务、答卷、工单、录音、导出、IVR 路由、监控和审计的全链路域过滤；org/group 数据域也没有建模。当前仍不能上线多租户生产。
 
 ### P0-5：认证与敏感数据安全不足
 
