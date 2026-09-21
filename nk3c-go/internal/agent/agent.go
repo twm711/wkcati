@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"time"
 
@@ -23,9 +24,24 @@ type Notifier interface {
 type Service struct {
 	db       *store.DB
 	notifier Notifier
+	workerID string
 }
 
-func New(db *store.DB) *Service { return &Service{db: db} }
+func New(db *store.DB) *Service {
+	return &Service{db: db, workerID: fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())}
+}
+
+func (s *Service) acquireWorkerLease() (bool, error) {
+	now := time.Now().UTC()
+	nowText := store.TimeFor(s.db.Driver, now)
+	untilText := store.TimeFor(s.db.Driver, now.Add(25*time.Second))
+	res, err := s.db.Exec(`UPDATE cti_worker_lock SET owner=?,lease_until=? WHERE name='sample-task-reaper' AND (lease_until<? OR owner=?)`, s.workerID, untilText, nowText, s.workerID)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
 
 // SetNotifier 装配质检事件发布器（app.Build 接线）
 func (s *Service) SetNotifier(n Notifier) { s.notifier = n }
@@ -245,9 +261,13 @@ func (s *Service) RenewTask(c *gin.Context) {
 // RecoverStaleTasks reconciles leases left by a previous process. SIP legs are
 // in-memory, so a DIALING call cannot survive a process restart safely.
 func (s *Service) RecoverStaleTasks() (int64, error) {
+	ok, err := s.acquireWorkerLease()
+	if err != nil || !ok {
+		return 0, err
+	}
 	now := store.NowFor(s.db.Driver)
 	var recovered int64
-	err := s.db.Tx(func(tx *sql.Tx) error {
+	err = s.db.Tx(func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT t.id,t.sample_id,t.call_id FROM cti_sample_task t JOIN cti_call_record c ON c.id=t.call_id WHERE t.status='LEASED' AND c.status='DIALING'`)
 		if err != nil {
 			return err
@@ -284,9 +304,13 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 // ReapExpiredTasks safely returns lease-expired tasks to the sample pool.
 // It is idempotent and may be called by a periodic worker.
 func (s *Service) ReapExpiredTasks() (int64, error) {
+	ok, err := s.acquireWorkerLease()
+	if err != nil || !ok {
+		return 0, err
+	}
 	now := store.NowFor(s.db.Driver)
 	var reclaimed int64
-	err := s.db.Tx(func(tx *sql.Tx) error {
+	err = s.db.Tx(func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT id,sample_id,call_id FROM cti_sample_task WHERE status='LEASED' AND lease_until<?`, now)
 		if err != nil {
 			return err
