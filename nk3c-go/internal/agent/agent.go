@@ -234,6 +234,56 @@ func (s *Service) Dispatch(c *gin.Context) {
 	}
 }
 
+func (s *Service) DeadTasks(c *gin.Context) {
+	u := auth.From(c)
+	if !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要督导及以上权限")
+		return
+	}
+	q := `SELECT t.id,t.project_id,t.sample_id,t.call_id,t.retry_count,t.max_retries,t.completed_at,s.cust_name FROM cti_sample_task t JOIN prj_project p ON p.id=t.project_id JOIN smp_sample s ON s.id=t.sample_id WHERE t.status='DEAD'`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` AND p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY t.completed_at DESC LIMIT 200`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id, pid, sid, cid, retry, max int64
+		var completed, name string
+		if rows.Scan(&id, &pid, &sid, &cid, &retry, &max, &completed, &name) == nil {
+			out = append(out, gin.H{"taskId": id, "projectId": pid, "sampleId": sid, "callId": cid, "retryCount": retry, "maxRetries": max, "completedAt": completed, "custName": name})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+func (s *Service) RetryDeadTask(c *gin.Context) {
+	u := auth.From(c)
+	if !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要督导及以上权限")
+		return
+	}
+	sid, _ := strconv.ParseInt(c.Param("sampleId"), 10, 64)
+	var tenant int64
+	if err := s.db.QueryRow(`SELECT p.tenant_id FROM smp_sample s JOIN prj_project p ON p.id=s.project_id WHERE s.id=? AND s.status='DEAD'`, sid).Scan(&tenant); err != nil || (!auth.HasRoleP(u, "domainAdmin") && tenant != u.TenantID) {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "死信样本不存在")
+		return
+	}
+	if _, err := s.db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL,attempts=0 WHERE id=? AND status='DEAD'`, sid); err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	_, _ = s.db.Exec(`UPDATE cti_sample_task SET status='REQUEUED' WHERE sample_id=? AND status='DEAD'`, sid)
+	rinfo.GinOK(c, gin.H{"sampleId": sid, "status": "IDLE"}, "死信样本已重新入池")
+}
+
 // RenewTask extends the current agent task lease after a heartbeat or answer.
 func (s *Service) RenewTask(c *gin.Context) {
 	u := auth.From(c)
@@ -268,15 +318,15 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 	now := store.NowFor(s.db.Driver)
 	var recovered int64
 	err = s.db.Tx(func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT t.id,t.sample_id,t.call_id,t.retry_count,t.max_retries FROM cti_sample_task t JOIN cti_call_record c ON c.id=t.call_id WHERE t.status='LEASED' AND c.status='DIALING'`)
+		rows, err := tx.Query(`SELECT t.id,t.project_id,t.sample_id,t.call_id,t.retry_count,t.max_retries FROM cti_sample_task t JOIN cti_call_record c ON c.id=t.call_id WHERE t.status='LEASED' AND c.status='DIALING'`)
 		if err != nil {
 			return err
 		}
-		type task struct{ id, sampleID, callID, retryCount, maxRetries int64 }
+		type task struct{ id, projectID, sampleID, callID, retryCount, maxRetries int64 }
 		var tasks []task
 		for rows.Next() {
 			var x task
-			if err := rows.Scan(&x.id, &x.sampleID, &x.callID, &x.retryCount, &x.maxRetries); err != nil {
+			if err := rows.Scan(&x.id, &x.projectID, &x.sampleID, &x.callID, &x.retryCount, &x.maxRetries); err != nil {
 				rows.Close()
 				return err
 			}
@@ -284,7 +334,11 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 		}
 		rows.Close()
 		for _, x := range tasks {
-			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',retry_count=retry_count+1,completed_at=? WHERE id=? AND status='LEASED'`, now, x.id)
+			nextTaskStatus := "EXPIRED"
+			if x.retryCount+1 >= x.maxRetries {
+				nextTaskStatus = "DEAD"
+			}
+			res, err := tx.Exec(`UPDATE cti_sample_task SET status=?,retry_count=retry_count+1,completed_at=? WHERE id=? AND status='LEASED'`, nextTaskStatus, now, x.id)
 			if err != nil {
 				return err
 			}
@@ -292,6 +346,7 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 			if n != 1 {
 				continue
 			}
+			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,created_at) VALUES(?,?,?,?,?,?,?)`, x.id, x.projectID, x.sampleID, x.callID, "PROCESS_RESTART", nextTaskStatus, now)
 			nextSampleStatus := "IDLE"
 			if x.retryCount+1 >= x.maxRetries {
 				nextSampleStatus = "DEAD"
@@ -315,15 +370,15 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 	now := store.NowFor(s.db.Driver)
 	var reclaimed int64
 	err = s.db.Tx(func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT id,sample_id,call_id,retry_count,max_retries FROM cti_sample_task WHERE status='LEASED' AND lease_until<?`, now)
+		rows, err := tx.Query(`SELECT id,project_id,sample_id,call_id,retry_count,max_retries FROM cti_sample_task WHERE status='LEASED' AND lease_until<?`, now)
 		if err != nil {
 			return err
 		}
-		type task struct{ id, sampleID, callID, retryCount, maxRetries int64 }
+		type task struct{ id, projectID, sampleID, callID, retryCount, maxRetries int64 }
 		var tasks []task
 		for rows.Next() {
 			var x task
-			if err := rows.Scan(&x.id, &x.sampleID, &x.callID, &x.retryCount, &x.maxRetries); err != nil {
+			if err := rows.Scan(&x.id, &x.projectID, &x.sampleID, &x.callID, &x.retryCount, &x.maxRetries); err != nil {
 				rows.Close()
 				return err
 			}
@@ -333,7 +388,11 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 		for _, x := range tasks {
 			// Claim expiry atomically so two service instances cannot both reclaim
 			// the same lease after the initial SELECT.
-			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',retry_count=retry_count+1,completed_at=? WHERE id=? AND status='LEASED' AND lease_until<?`, now, x.id, now)
+			nextTaskStatus := "EXPIRED"
+			if x.retryCount+1 >= x.maxRetries {
+				nextTaskStatus = "DEAD"
+			}
+			res, err := tx.Exec(`UPDATE cti_sample_task SET status=?,retry_count=retry_count+1,completed_at=? WHERE id=? AND status='LEASED' AND lease_until<?`, nextTaskStatus, now, x.id, now)
 			if err != nil {
 				return err
 			}
@@ -341,6 +400,7 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 			if n != 1 {
 				continue
 			}
+			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,created_at) VALUES(?,?,?,?,?,?,?)`, x.id, x.projectID, x.sampleID, x.callID, "RETRY", nextTaskStatus, now)
 			nextSampleStatus := "IDLE"
 			if x.retryCount+1 >= x.maxRetries {
 				nextSampleStatus = "DEAD"
