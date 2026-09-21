@@ -185,3 +185,5 @@
 新增 `TestDialWithoutSIPDomainFinishesClaimedCall` 故障注入测试：模拟已领取 DIALING 话务但 SIP 域未启动，验证 Dial 返回错误且话务最终变为 CLOSED；完整 Go 测试通过。线路不可用和无路由场景共用同一收尾路径，仍需 MySQL/真实 SIP 故障注入。
 
 新增 SIP 失败结果映射测试，覆盖 BUSY/INVALID/REFUSE/NA 及未知响应默认 NA；当前已验证分类和无 SIP 域收尾，目标不可达/486 等真实 Invite 拒绝响应的完整媒体 E2E 仍待补齐。
+
+新增 `TestBusyResultClosesDialingCallAndReturnsSample`：用 BUSY 结果码验证 DIALING 话务 CLOSED、结果码 BUSY、样本回到 IDLE；这是业务收尾测试，不等同于真实 SIP 486 Invite E2E，后者仍待下一轮补齐。
