@@ -213,3 +213,5 @@
 将 HALF_OPEN 单探测竞争测试从 2 个并发领取者扩展到 8 个，并以 `-count=10` 重复执行，均严格只成功 1 个探测；这是数据库原子竞争证据，尚不等同于 MySQL 多进程真实压测。
 
 当前沙箱无 `mysql`/`mysqld` 服务，未宣称真实 MySQL 迁移完成；新增 `TestMySQLMigrationsAreOrderedAndHaveGooseSections`，静态检查 MySQL 迁移版本唯一、Goose Up/Down 完整且不含 SQLite `INSERT OR IGNORE`，真实 MySQL 执行仍待上线环境验证。
+
+新增可选 MySQL 集成测试 `internal/store/mysql_integration_test.go` 和脚本 `scripts/mysql-integration-test.sh`：设置 `NK3C_MYSQL_DSN` 后执行真实迁移及关键字段查询；当前沙箱因未设置 DSN 仅显示 SKIP，未宣称真实 MySQL 已验证。
