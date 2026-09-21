@@ -262,7 +262,7 @@ func (s *Service) Lines(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
 		return
 	}
-	q := `SELECT id,line_no,COALESCE(host,''),port,enabled,priority,capacity,active_calls,created_at FROM cti_outbound_line`
+	q := `SELECT id,line_no,COALESCE(host,''),port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,COALESCE(opened_until,''),created_at FROM cti_outbound_line`
 	args := []interface{}{}
 	if !auth.HasRoleP(u, "domainAdmin") {
 		q += ` WHERE tenant_id=?`
@@ -277,10 +277,10 @@ func (s *Service) Lines(c *gin.Context) {
 	defer rows.Close()
 	out := []map[string]interface{}{}
 	for rows.Next() {
-		var id, port, en, pri, cap, active int64
-		var no, host, created string
-		if rows.Scan(&id, &no, &host, &port, &en, &pri, &cap, &active, &created) == nil {
-			out = append(out, gin.H{"id": id, "lineNo": no, "host": host, "port": port, "enabled": en == 1, "priority": pri, "capacity": cap, "activeCalls": active, "available": cap > active, "createdAt": created})
+		var id, port, en, pri, cap, active, streak int64
+		var no, host, state, opened, created string
+		if rows.Scan(&id, &no, &host, &port, &en, &pri, &cap, &active, &state, &streak, &opened, &created) == nil {
+			out = append(out, gin.H{"id": id, "lineNo": no, "host": host, "port": port, "enabled": en == 1, "priority": pri, "capacity": cap, "activeCalls": active, "available": cap > active && state != "OPEN", "circuitState": state, "failureStreak": streak, "openedUntil": opened, "createdAt": created})
 		}
 	}
 	rinfo.GinOK(c, out, "ok")

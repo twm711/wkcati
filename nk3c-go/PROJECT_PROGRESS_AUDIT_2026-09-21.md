@@ -165,5 +165,5 @@
 - 修正 README 对 `MESSAGE/FORCE_BUSY/FORCE_READY` 的过期描述。
 - `go test ./...`：全部通过。
 - 新增 `/api/monitor/line-health`：按租户汇总主叫线路总呼叫、接通、失败、失败率和最近话务时间；样本量至少 10 且失败率不低于 50% 时标记 `degraded`。
-- 新增 `cti_outbound_line` 线路模型及 `/api/monitor/lines` 查询、`POST /api/monitor/lines` 配置接口，支持线路启停、优先级、容量和 active_calls 状态；媒体外呼会优先按租户、启用状态、优先级和剩余容量原子占用线路，呼叫结束释放 active_calls，无可用数据库线路时兼容启动参数路由。
+- 新增 `cti_outbound_line` 线路模型及 `/api/monitor/lines` 查询、`POST /api/monitor/lines` 配置接口，支持线路启停、优先级、容量和 active_calls 状态；媒体外呼会优先按租户、启用状态、优先级和剩余容量原子占用线路，呼叫结束释放 active_calls，无可用数据库线路时兼容启动参数路由；新增线路熔断字段，连续 5 次失败进入 OPEN、5 分钟后允许再次尝试，线路列表展示 circuitState/failureStreak/openedUntil。
 - `web/node_modules` 不存在，`npx tsc --noEmit` 尚未执行。

@@ -64,7 +64,7 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 		var id int64
 		var no, host string
 		var port int
-		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity ORDER BY priority,id LIMIT 1`, tenant).Scan(&id, &no, &host, &port)
+		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity AND (circuit_state<>'OPEN' OR opened_until IS NULL OR opened_until<=?) ORDER BY CASE WHEN circuit_state='HALF_OPEN' THEN 0 ELSE 1 END,priority,id LIMIT 1`, tenant, store.NowFor(s.db.Driver)).Scan(&id, &no, &host, &port)
 		if err != nil {
 			return line, err
 		}
@@ -268,16 +268,17 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 	var outData map[string]interface{}
 	var outMsg string
 	err := s.db.Tx(func(tx *sql.Tx) error {
-		var sampleID, recAgent int64
+		var sampleID, recAgent, projectID int64
+		var callerNo string
 		var status string
 		var rc *string
-		q := `SELECT sample_id,agent_id,status,result_code FROM cti_call_record WHERE id=?`
+		q := `SELECT sample_id,agent_id,project_id,caller_no,status,result_code FROM cti_call_record WHERE id=?`
 		args := []interface{}{callID}
 		if agentID != 0 {
 			q += ` AND agent_id=?`
 			args = append(args, agentID)
 		}
-		if err := tx.QueryRow(q, args...).Scan(&sampleID, &recAgent, &status, &rc); err != nil {
+		if err := tx.QueryRow(q, args...).Scan(&sampleID, &recAgent, &projectID, &callerNo, &status, &rc); err != nil {
 			return &BizErr{"4041", "话务不存在或非本坐席话务"}
 		}
 		if rc != nil && *rc != "" {
@@ -360,11 +361,20 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 			ts, resultCode, callID); err != nil {
 			return err
 		}
+		// 线路连续失败触发熔断；成功或非失败结果清零失败连击。
+		var tenantID int64
+		_ = tx.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, projectID).Scan(&tenantID)
+		if category == "FAIL" {
+			openedUntil := store.TimeFor(s.db.Driver, time.Now().UTC().Add(5*time.Minute))
+			_, _ = tx.Exec(`UPDATE cti_outbound_line SET failure_streak=failure_streak+1,circuit_state=CASE WHEN failure_streak+1>=5 THEN 'OPEN' ELSE 'CLOSED' END,opened_until=CASE WHEN failure_streak+1>=5 THEN ? ELSE NULL END WHERE tenant_id=? AND line_no=?`, openedUntil, tenantID, callerNo)
+		} else {
+			_, _ = tx.Exec(`UPDATE cti_outbound_line SET failure_streak=0,circuit_state='CLOSED',opened_until=NULL WHERE tenant_id=? AND line_no=?`, tenantID, callerNo)
+		}
 		_, _ = tx.Exec(`UPDATE cti_sample_task SET status='COMPLETED',completed_at=? WHERE call_id=? AND status='LEASED'`, ts, callID)
 		// 保留真实业务结果作为一次尝试原因，便于区分未接、忙线、拒接等结果码。
-		var taskID, projectID int64
-		if tx.QueryRow(`SELECT id,project_id FROM cti_sample_task WHERE call_id=? ORDER BY id DESC LIMIT 1`, callID).Scan(&taskID, &projectID) == nil {
-			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,failure_code,failure_detail,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, taskID, projectID, sampleID, callID, "RESULT_CODE", resultCode, resultCode, category, ts)
+		var taskID, taskProjectID int64
+		if tx.QueryRow(`SELECT id,project_id FROM cti_sample_task WHERE call_id=? ORDER BY id DESC LIMIT 1`, callID).Scan(&taskID, &taskProjectID) == nil {
+			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,failure_code,failure_detail,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, taskID, taskProjectID, sampleID, callID, "RESULT_CODE", resultCode, resultCode, category, ts)
 		}
 		outData = map[string]interface{}{"sampleId": sampleID, "destination": dest}
 		if hasSheet {
