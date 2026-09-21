@@ -65,12 +65,20 @@ func TestOutboundInvite486FinishesBusy(t *testing.T) {
 	if status != "CLOSED" || result != "BUSY" {
 		t.Fatalf("expected CLOSED/BUSY, got %s/%s", status, result)
 	}
-	var active int
-	if err := db.QueryRow(`SELECT active_calls FROM cti_outbound_line WHERE id=?`, 9601).Scan(&active); err != nil {
+	var active, streak int
+	var circuit, caller string
+	if err := db.QueryRow(`SELECT active_calls,failure_streak,circuit_state,line_no FROM cti_outbound_line WHERE id=?`, 9601).Scan(&active, &streak, &circuit, &caller); err != nil {
 		t.Fatal(err)
 	}
-	if active != 0 {
-		t.Fatalf("expected line active_calls=0, got %d", active)
+	if active != 0 || streak != 1 || circuit != "CLOSED" || caller != "line-486" {
+		t.Fatalf("unexpected line state active=%d streak=%d circuit=%s caller=%s", active, streak, circuit, caller)
+	}
+	var recordedCaller string
+	if err := db.QueryRow(`SELECT caller_no FROM cti_call_record WHERE id=?`, 9501).Scan(&recordedCaller); err != nil {
+		t.Fatal(err)
+	}
+	if recordedCaller != "line-486" {
+		t.Fatalf("expected selected caller_no line-486, got %s", recordedCaller)
 	}
 }
 

@@ -199,3 +199,5 @@
 新增真实 SIP 603 Global Decline E2E：被叫模拟器返回 603，外呼映射为 REFUSE，话务收尾为 CLOSED/REFUSE；忙线、不可用、超时、无效号码和拒接五类真实 SIP 失败均已验证。
 
 真实 SIP 486 E2E 已接入数据库线路：选线后回写实际 caller_no，486 映射 BUSY，话务 CLOSED，线路租约释放且 active_calls=0；新增 `SetOutboundCaller` 修复线路失败统计无法关联实际选线的问题。
+
+扩展真实 SIP 486 + 数据库线路 E2E 断言：确认实际 caller_no 回写为 line-486、线路 failure_streak=1、circuit_state=CLOSED、active_calls=0，话务结果为 CLOSED/BUSY；线路健康度反馈已由真实 SIP 失败驱动。
