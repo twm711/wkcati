@@ -187,3 +187,5 @@
 新增 SIP 失败结果映射测试，覆盖 BUSY/INVALID/REFUSE/NA 及未知响应默认 NA；当前已验证分类和无 SIP 域收尾，目标不可达/486 等真实 Invite 拒绝响应的完整媒体 E2E 仍待补齐。
 
 新增 `TestBusyResultClosesDialingCallAndReturnsSample`：用 BUSY 结果码验证 DIALING 话务 CLOSED、结果码 BUSY、样本回到 IDLE；这是业务收尾测试，不等同于真实 SIP 486 Invite E2E，后者仍待下一轮补齐。
+
+已补充真实 SIP 拒绝 E2E：被叫 diago 模拟器实际返回 486 Busy Here，外呼日志识别 SIP 486 并映射 BUSY，业务收尾后 `cti_call_record` 为 CLOSED/BUSY；全量 Go 测试通过。
