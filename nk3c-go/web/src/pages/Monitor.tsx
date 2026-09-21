@@ -9,6 +9,7 @@ interface WallFrame { type: string; data: Wall; ts: number }
 interface CallRow { id: number; sample_id: unknown; cust_name: unknown; agent_no: string; status: string; result_code: unknown; begin_time: string; connect_time: unknown }
 interface SheetRow { id: number; call_id: number; project_id: number; sample_id: number; agent_id: number; qnr_id: number; qnr_version: string; status: string; audit_remark: string }
 interface QCEvent { type: 'qc'; event: string; data: Record<string, unknown>; ts: number }
+interface LineRuntime { line: string; windowMinutes: number; total: number; connected: number; abandoned: number; abandonRate: number; lastCallAt: string; rateLimitPerMinute: number; effectiveRatePerMinute: number; failureStreak: number; circuitState: string; recoveryCooldownSeconds: number }
 
 const STATE_COLOR: Record<string, string> = { READY: 'default', DIALING: 'processing', TALKING: 'warning' }
 
@@ -16,6 +17,7 @@ export default function Monitor() {
   const { message } = App.useApp()
   const [wall, setWall] = useState<Wall | null>(null)
   const [calls, setCalls] = useState<CallRow[]>([])
+  const [lineRuntime, setLineRuntime] = useState<LineRuntime[]>([])
   const [sheets, setSheets] = useState<SheetRow[]>([])
   const [auditTarget, setAuditTarget] = useState<{ row: SheetRow; action: 'PASS' | 'REJECT' } | null>(null)
   const [wsLive, setWsLive] = useState(false)
@@ -33,6 +35,8 @@ export default function Monitor() {
     }
     const c = await api.get<CallRow[]>('/api/monitor/calls?limit=12')
     if (c.success) setCalls(c.data as unknown as CallRow[])
+    const lr = await api.get<LineRuntime[]>('/api/monitor/line-runtime?minutes=15')
+    if (lr.success) setLineRuntime(lr.data)
     if (canAudit) {
       const s = await api.get<{ total: number; rows: SheetRow[] }>('/api/sheet?status=SUBMITTED')
       if (s.success) setSheets(s.data.rows)
@@ -208,6 +212,25 @@ export default function Monitor() {
           />
         </Card>
       )}
+
+      <Card title="线路运行态（最近 15 分钟）">
+        <Table<LineRuntime>
+          rowKey="line"
+          size="small"
+          pagination={false}
+          dataSource={lineRuntime}
+          locale={{ emptyText: '暂无线路话务数据' }}
+          columns={[
+            { title: '线路', dataIndex: 'line' },
+            { title: '呼损率', dataIndex: 'abandonRate', render: (v: number) => <Tag color={v >= 20 ? 'red' : v >= 5 ? 'orange' : 'green'}>{v.toFixed(1)}%</Tag> },
+            { title: '速率', render: (_, r) => `${r.effectiveRatePerMinute.toFixed(1)} / ${r.rateLimitPerMinute}/分钟` },
+            { title: '状态', render: (_, r) => <Tag color={r.circuitState === 'OPEN' ? 'red' : r.recoveryCooldownSeconds > 0 ? 'orange' : 'green'}>{r.circuitState || 'CLOSED'}</Tag> },
+            { title: '失败连击', dataIndex: 'failureStreak' },
+            { title: '恢复冷却', render: (_, r) => r.recoveryCooldownSeconds > 0 ? `${r.recoveryCooldownSeconds}s` : '-' },
+            { title: '样本', render: (_, r) => `${r.total} 通 / ${r.connected} 接通` },
+          ]}
+        />
+      </Card>
 
       <Card title="话务流水（最近 12 条）">
         <Table<CallRow>
