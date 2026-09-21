@@ -161,8 +161,12 @@ func (s *Service) ReapOutboundLineLeases() (int64, error) {
 			leases = append(leases, x)
 		}
 		for _, x := range leases {
-			if _, err := tx.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, x.callID); err != nil {
+			deleted, err := tx.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, x.callID)
+			if err != nil {
 				return err
+			}
+			if n, _ := deleted.RowsAffected(); n != 1 {
+				continue
 			}
 			if _, err := tx.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, x.lineID); err != nil {
 				return err

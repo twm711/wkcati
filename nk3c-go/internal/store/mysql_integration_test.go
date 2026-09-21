@@ -83,6 +83,48 @@ func TestMySQLLineRateBucketConcurrentUpdate(t *testing.T) {
 }
 
 // TestMySQLHalfOpenProbeConcurrentUpdate 验证多个 MySQL 连接只有一个可以领取 HALF_OPEN 探测。
+func TestMySQLLeaseReapDeleteIsIdempotent(t *testing.T) {
+	db := mysqlTestDB(t)
+	defer db.Close()
+	const lineID, callID = 998003, 998004
+	_, _ = db.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, callID)
+	_, _ = db.Exec(`DELETE FROM cti_outbound_line WHERE id=?`, lineID)
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,rate_limit_per_minute,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, lineID, 1, "mysql-test-lease", "127.0.0.1", 5060, 1, 1, 10, 1, "CLOSED", 0, 30, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line_lease(call_id,line_id,lease_until,created_at) VALUES(?,?,?,?)`, callID, lineID, time.Now().UTC().Add(-time.Minute), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, callID)
+	defer db.Exec(`DELETE FROM cti_outbound_line WHERE id=?`, lineID)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tx, err := db.Begin()
+			if err != nil {
+				return
+			}
+			res, err := tx.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, callID)
+			if err == nil {
+				if n, _ := res.RowsAffected(); n == 1 {
+					_, _ = tx.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, lineID)
+				}
+			}
+			_ = tx.Commit()
+		}()
+	}
+	wg.Wait()
+	var active int
+	if err := db.QueryRow(`SELECT active_calls FROM cti_outbound_line WHERE id=?`, lineID).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if active != 0 {
+		t.Fatalf("expected idempotent reap active_calls=0, got %d", active)
+	}
+}
+
 func TestMySQLHalfOpenProbeConcurrentUpdate(t *testing.T) {
 	db := mysqlTestDB(t)
 	defer db.Close()

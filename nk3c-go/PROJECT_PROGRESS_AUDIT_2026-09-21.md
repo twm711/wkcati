@@ -219,3 +219,5 @@
 扩展可选 MySQL 集成测试：`TestMySQLLineRateBucketConcurrentUpdate` 通过 16 个 goroutine/数据库连接竞争同一线路分钟桶，期望原子更新严格成功 2 次；当前无 `NK3C_MYSQL_DSN`，测试仅 SKIP，真实 MySQL 结果待外部环境执行。
 
 扩展 MySQL 集成测试 `TestMySQLHalfOpenProbeConcurrentUpdate`：16 个 MySQL 连接竞争同一条到期 OPEN 线路，期望只有 1 个条件更新成功进入 HALF_OPEN；当前无 DSN，测试仅 SKIP，真实 MySQL 结果待执行。
+
+修复线路租约回收并发幂等性：只有删除租约实际影响 1 行时才递减 active_calls，避免多个 MySQL 实例同时回收同一过期租约导致重复递减；新增可选 `TestMySQLLeaseReapDeleteIsIdempotent` 覆盖该条件。
