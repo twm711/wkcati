@@ -189,3 +189,5 @@
 新增 `TestBusyResultClosesDialingCallAndReturnsSample`：用 BUSY 结果码验证 DIALING 话务 CLOSED、结果码 BUSY、样本回到 IDLE；这是业务收尾测试，不等同于真实 SIP 486 Invite E2E，后者仍待下一轮补齐。
 
 已补充真实 SIP 拒绝 E2E：被叫 diago 模拟器实际返回 486 Busy Here，外呼日志识别 SIP 486 并映射 BUSY，业务收尾后 `cti_call_record` 为 CLOSED/BUSY；全量 Go 测试通过。
+
+新增真实 SIP 480 Temporarily Unavailable E2E：被叫模拟器返回 480，外呼映射为 NA，话务收尾为 CLOSED/NA；486 Busy Here 与 480 超时/不可用响应均已在真实 diago 链路验证。
