@@ -51,6 +51,11 @@ func main() {
 	// Lease reaper: expired queue tasks must not strand samples after a
 	// browser/SIP disconnect. It is deliberately independent of the HTTP loop.
 	leaseAgent := agent.New(db)
+	if n, err := leaseAgent.ReapExpiredTasks(); err != nil {
+		log.Printf("[任务租约] 启动恢复失败: %v", err)
+	} else if n > 0 {
+		log.Printf("[任务租约] 启动已回收 %d 个过期任务", n)
+	}
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
