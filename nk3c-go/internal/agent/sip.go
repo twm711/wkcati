@@ -62,13 +62,23 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 	}
 	for i := 0; i < 8; i++ {
 		var id int64
-		var no, host string
+		var no, host, state string
 		var port int
-		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity AND (circuit_state<>'OPEN' OR opened_until IS NULL OR opened_until<=?) ORDER BY CASE WHEN circuit_state='HALF_OPEN' THEN 0 ELSE 1 END,priority,id LIMIT 1`, tenant, store.NowFor(s.db.Driver)).Scan(&id, &no, &host, &port)
+		now := store.NowFor(s.db.Driver)
+		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port,circuit_state FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity AND (circuit_state='CLOSED' OR (circuit_state='OPEN' AND opened_until IS NOT NULL AND opened_until<=?)) ORDER BY priority,id LIMIT 1`, tenant, now).Scan(&id, &no, &host, &port, &state)
 		if err != nil {
 			return line, err
 		}
-		res, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls+1 WHERE id=? AND enabled=1 AND active_calls<capacity`, id)
+		if state == "OPEN" {
+			probe, err := s.db.Exec(`UPDATE cti_outbound_line SET circuit_state='HALF_OPEN' WHERE id=? AND circuit_state='OPEN' AND opened_until<=?`, id, now)
+			if err != nil {
+				return line, err
+			}
+			if n, _ := probe.RowsAffected(); n != 1 {
+				continue
+			}
+		}
+		res, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls+1 WHERE id=? AND enabled=1 AND active_calls<capacity AND circuit_state IN ('CLOSED','HALF_OPEN')`, id)
 		if err != nil {
 			return line, err
 		}
@@ -79,6 +89,9 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 				return line, leaseErr
 			}
 			return OutboundLine{ID: id, LineNo: no, Host: host, Port: port}, nil
+		}
+		if state == "OPEN" {
+			_, _ = s.db.Exec(`UPDATE cti_outbound_line SET circuit_state='OPEN',opened_until=? WHERE id=? AND circuit_state='HALF_OPEN'`, store.TimeFor(s.db.Driver, time.Now().UTC().Add(1*time.Minute)), id)
 		}
 	}
 	return line, fmt.Errorf("外呼线路容量竞争失败")
