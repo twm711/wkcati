@@ -1,6 +1,8 @@
 package store
 
 import (
+	"database/sql"
+	"fmt"
 	"os"
 	"sync"
 	"testing"
@@ -233,8 +235,21 @@ func TestMySQLClaimTransactionCreatesOneCallAndTask(t *testing.T) {
 				return
 			}
 			var status string
+			claimed := false
 			if err = tx.QueryRow(`SELECT status FROM smp_sample WHERE id=? FOR UPDATE`, sampleID).Scan(&status); err == nil && status == "IDLE" {
-				_, err = tx.Exec(`UPDATE smp_sample SET status='LEASED' WHERE id=?`, sampleID)
+				var updateRes sql.Result
+				updateRes, err = tx.Exec(`UPDATE smp_sample SET status='LEASED' WHERE id=? AND status='IDLE'`, sampleID)
+				if err == nil {
+					rows, rowsErr := updateRes.RowsAffected()
+					if rowsErr != nil || rows != 1 {
+						err = rowsErr
+						if err == nil {
+							err = fmt.Errorf("sample claim affected %d rows", rows)
+						}
+					} else {
+						claimed = true
+					}
+				}
 				if err == nil {
 					_, err = tx.Exec(`INSERT INTO cti_call_record(id,project_id,sample_id,status,begin_time) VALUES(?,?,?,?,?)`, callID, 1, sampleID, "DIALING", time.Now().UTC())
 				}
@@ -244,9 +259,11 @@ func TestMySQLClaimTransactionCreatesOneCallAndTask(t *testing.T) {
 			}
 			if err == nil {
 				if tx.Commit() == nil {
-					mu.Lock()
-					successes++
-					mu.Unlock()
+					if claimed {
+						mu.Lock()
+						successes++
+						mu.Unlock()
+					}
 					return
 				}
 			}

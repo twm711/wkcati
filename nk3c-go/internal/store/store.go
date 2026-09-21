@@ -137,8 +137,27 @@ func (d *DB) Migrate(force bool) error {
 					return fmt.Errorf("迁移 %s 失败: %w", ver, err)
 				}
 			}
-		} else if _, err := d.Exec(text); err != nil {
-			return fmt.Errorf("迁移 %s 失败: %w", ver, err)
+		} else {
+			// database/sql drivers do not uniformly enable multi-statements;
+			// execute each migration statement separately so MySQL/MariaDB
+			// behaves the same as SQLite. Remove goose/SQL line comments
+			// first, otherwise a comment after a semicolon can swallow the
+			// following statement when sent as an individual query.
+			clean := make([]string, 0)
+			for _, line := range strings.Split(text, "\n") {
+				if !strings.HasPrefix(strings.TrimSpace(line), "--") {
+					clean = append(clean, line)
+				}
+			}
+			for _, stmt := range strings.Split(strings.Join(clean, "\n"), ";") {
+				stmt = strings.TrimSpace(stmt)
+				if stmt == "" {
+					continue
+				}
+				if _, err := d.Exec(stmt); err != nil {
+					return fmt.Errorf("迁移 %s 失败: %w", ver, err)
+				}
+			}
 		}
 		appliedAt := time.Now().UTC().Format(time.RFC3339)
 		if d.Driver == "mysql" {
