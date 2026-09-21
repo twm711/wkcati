@@ -106,6 +106,15 @@ func (s *Service) Dispatch(c *gin.Context) {
 			rinfo.GinFail(c, rinfo.CodePermission, "坐席技能不满足项目要求")
 			return errAbort
 		}
+		var queueID sql.NullInt64
+		if err := tx.QueryRow(`SELECT queue_id FROM prj_queue WHERE project_id=?`, projectID).Scan(&queueID); err == nil && queueID.Valid {
+			var member int
+			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, u.ID, queueID.Int64).Scan(&member)
+			if member == 0 {
+				rinfo.GinFail(c, rinfo.CodePermission, "坐席未加入项目队列")
+				return errAbort
+			}
+		}
 		halfyear, _ := strconv.ParseInt(param(tx, "halfyear.days", "180"), 10, 64)
 		redialMax, _ := strconv.ParseInt(param(tx, "redial.max", "3"), 10, 64)
 		cutoff := time.Now().UTC().Add(-time.Duration(halfyear) * 24 * time.Hour).Format("2006-01-02T15:04:05+00:00")

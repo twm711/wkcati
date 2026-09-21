@@ -68,6 +68,9 @@ func TestOrgGroupAdministrationScope(t *testing.T) {
 		t.Fatalf("队列创建失败: %v", queue)
 	}
 	qid := queue["data"].(map[string]interface{})["id"].(float64)
+	if r := tenantPut(t, ts.URL, "/api/users/2/queue", admin, map[string]interface{}{"queueId": qid, "capacity": 1}); r["success"] != true {
+		t.Fatalf("坐席队列归属失败: %v", r)
+	}
 	if r := tenantPut(t, ts.URL, "/api/project/1/queue", admin, map[string]interface{}{"queueId": qid, "priority": 10}); r["success"] != true {
 		t.Fatalf("项目队列绑定失败: %v", r)
 	}

@@ -102,6 +102,42 @@ func (s *Service) ListGroups(c *gin.Context) {
 	rinfo.GinOK(c, out, "ok")
 }
 
+func (s *Service) AssignUserQueue(c *gin.Context) {
+	op := auth.From(c)
+	if !auth.HasRoleP(op, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要队列管理权限")
+		return
+	}
+	uid, _ := strconv.ParseInt(c.Param("uid"), 10, 64)
+	var req struct {
+		QueueID  int64 `json:"queueId" binding:"required"`
+		Enabled  *bool `json:"enabled"`
+		Capacity int   `json:"capacity"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "queueId 参数错误")
+		return
+	}
+	if req.Capacity <= 0 {
+		req.Capacity = 1
+	}
+	en := 1
+	if req.Enabled != nil && !(*req.Enabled) {
+		en = 0
+	}
+	var ut, qt int64
+	if s.db.QueryRow(`SELECT tenant_id FROM sys_user WHERE id=?`, uid).Scan(&ut) != nil || s.db.QueryRow(`SELECT tenant_id FROM cti_queue WHERE id=? AND status=1`, req.QueueID).Scan(&qt) != nil || ut != qt || (!auth.HasRoleP(op, "domainAdmin") && ut != op.TenantID) {
+		rinfo.GinFail(c, rinfo.CodePermission, "租户归属不一致")
+		return
+	}
+	if s.db.Driver == "mysql" {
+		_, _ = s.db.Exec(`INSERT INTO cti_agent_queue(user_id,queue_id,enabled,capacity) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE enabled=VALUES(enabled),capacity=VALUES(capacity)`, uid, req.QueueID, en, req.Capacity)
+	} else {
+		_, _ = s.db.Exec(`INSERT INTO cti_agent_queue(user_id,queue_id,enabled,capacity) VALUES(?,?,?,?) ON CONFLICT(user_id,queue_id) DO UPDATE SET enabled=excluded.enabled,capacity=excluded.capacity`, uid, req.QueueID, en, req.Capacity)
+	}
+	rinfo.GinOK(c, gin.H{"userId": uid, "queueId": req.QueueID, "enabled": en == 1, "capacity": req.Capacity}, "坐席队列归属已更新")
+}
+
 func (s *Service) ListQueues(c *gin.Context) {
 	u := auth.From(c)
 	q := `SELECT id,org_id,group_id,name,priority,status FROM cti_queue WHERE tenant_id=? ORDER BY priority,id`

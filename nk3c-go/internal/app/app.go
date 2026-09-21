@@ -82,6 +82,7 @@ func Build(db *store.DB) *App {
 		api.PUT("/users/:uid/skill", orgs.AssignUserSkill)
 		api.GET("/queues", orgs.ListQueues)
 		api.POST("/queues", orgs.CreateQueue)
+		api.PUT("/users/:uid/queue", orgs.AssignUserQueue)
 
 		prj := api.Group("/project")
 		prj.PUT("/:pid/group", orgs.AssignProjectGroup)
