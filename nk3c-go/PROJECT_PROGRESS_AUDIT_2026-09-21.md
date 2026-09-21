@@ -225,3 +225,5 @@
 新增可选 `TestMySQLLeaseReapAndAcquireRace`：模拟过期租约回收与新任务占用同一线路的交叉竞争，回收成功后新占用最终只能得到一个 active_calls；当前无 DSN，仍待真实 MySQL 执行。
 
 新增可选 `TestMySQLSampleClaimConcurrentUpdate`：16 个 MySQL 连接竞争同一 IDLE 样本的条件 UPDATE，期望只有 1 次变更为 LEASED；该测试验证样本原子领取基础，不等同于完整 ClaimProgressiveTask 多表事务验证。
+
+新增可选 `TestMySQLClaimTransactionCreatesOneCallAndTask`：16 个 MySQL 事务竞争同一 IDLE 样本，使用 `SELECT ... FOR UPDATE` 后在同一事务更新样本、创建 cti_call_record 和 cti_sample_task，期望最终只存在一组完整记录；当前无 DSN，仍待真实环境执行。

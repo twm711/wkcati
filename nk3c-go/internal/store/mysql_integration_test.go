@@ -207,6 +207,68 @@ func TestMySQLSampleClaimConcurrentUpdate(t *testing.T) {
 	}
 }
 
+// TestMySQLClaimTransactionCreatesOneCallAndTask 验证样本、话务、任务租约在同一事务内只产生一组记录。
+func TestMySQLClaimTransactionCreatesOneCallAndTask(t *testing.T) {
+	db := mysqlTestDB(t)
+	defer db.Close()
+	const sampleID, callID, taskID = 998009, 998010, 998011
+	_, _ = db.Exec(`DELETE FROM cti_sample_task WHERE id=?`, taskID)
+	_, _ = db.Exec(`DELETE FROM cti_call_record WHERE id=?`, callID)
+	_, _ = db.Exec(`DELETE FROM smp_sample WHERE id=?`, sampleID)
+	if _, err := db.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,status) VALUES(?,?,?,?)`, sampleID, 1, "mysql-claim-tx", "IDLE"); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DELETE FROM cti_sample_task WHERE id=?`, taskID)
+	defer db.Exec(`DELETE FROM cti_call_record WHERE id=?`, callID)
+	defer db.Exec(`DELETE FROM smp_sample WHERE id=?`, sampleID)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	successes := 0
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tx, err := db.Begin()
+			if err != nil {
+				return
+			}
+			var status string
+			if err = tx.QueryRow(`SELECT status FROM smp_sample WHERE id=? FOR UPDATE`, sampleID).Scan(&status); err == nil && status == "IDLE" {
+				_, err = tx.Exec(`UPDATE smp_sample SET status='LEASED' WHERE id=?`, sampleID)
+				if err == nil {
+					_, err = tx.Exec(`INSERT INTO cti_call_record(id,project_id,sample_id,status,begin_time) VALUES(?,?,?,?,?)`, callID, 1, sampleID, "DIALING", time.Now().UTC())
+				}
+				if err == nil {
+					_, err = tx.Exec(`INSERT INTO cti_sample_task(id,project_id,sample_id,call_id,status,leased_at,lease_until) VALUES(?,?,?,?,?,?,?)`, taskID, 1, sampleID, callID, "LEASED", time.Now().UTC(), time.Now().UTC().Add(time.Minute))
+				}
+			}
+			if err == nil {
+				if tx.Commit() == nil {
+					mu.Lock()
+					successes++
+					mu.Unlock()
+					return
+				}
+			}
+			_ = tx.Rollback()
+		}()
+	}
+	wg.Wait()
+	if successes != 1 {
+		t.Fatalf("expected one complete claim transaction, got %d", successes)
+	}
+	var calls, tasks int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE id=?`, callID).Scan(&calls); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE id=?`, taskID).Scan(&tasks); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || tasks != 1 {
+		t.Fatalf("expected one call/task, got %d/%d", calls, tasks)
+	}
+}
+
 func TestMySQLHalfOpenProbeConcurrentUpdate(t *testing.T) {
 	db := mysqlTestDB(t)
 	defer db.Close()
