@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"nk3c/internal/auth"
@@ -186,7 +187,7 @@ func (s *Service) advance(c *gin.Context, target string) {
 		}
 		if target == "CLOSED" && revisit == nil { // 归档 → 自动生成回访样本进项目1（P0 行96）
 			var sk int64
-			_ = tx.QueryRow(`SELECT COALESCE(MAX(shuffle_key),0)+1 FROM smp_sample`).Scan(&sk)
+			sk = time.Now().UnixNano()
 			var callerNo string
 			_ = tx.QueryRow(`SELECT caller_no FROM wko_ticket WHERE id=?`, tid).Scan(&callerNo)
 			sampleRes, err := tx.Exec(`INSERT INTO smp_sample(project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?)`,

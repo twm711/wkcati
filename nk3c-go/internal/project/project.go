@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"nk3c/internal/auth"
@@ -519,7 +520,7 @@ func (s *Service) ImportSamples(c *gin.Context) {
 			continue
 		}
 		var sk int64
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(shuffle_key),0)+1 FROM smp_sample`).Scan(&sk)
+		sk = time.Now().UnixNano()
 		res, err := s.db.Exec(`INSERT INTO smp_sample(project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?)`, pid, nm, "未知", "IDLE", nil, 0, nil, sk, nil)
 		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
 		sid, err := res.LastInsertId()
