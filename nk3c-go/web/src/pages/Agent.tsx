@@ -113,7 +113,9 @@ export default function Agent() {
     const r = await api.post<{ callId:number; sampleId:number }>(`/api/agent/preview/${preview.taskId}/confirm`)
     if (!r.success) { message.error(r.message); return }
     setPreview(null)
-    message.success(`${r.message}，话务 #${r.data.callId} 已建立；请继续使用外呼媒体或刷新工作台获取问卷`)
+    setDisp(r.data as unknown as Dispatch)
+    setAnswered({}); setValues({})
+    message.success(`${r.message}，话务 #${r.data.callId} 已建立`)
   }
   const skipPreview = async () => { if (!preview) return; const r = await api.post(`/api/agent/preview/${preview.taskId}/skip`); if (r.success) { setPreview(null); message.success(r.message) } else message.error(r.message) }
 

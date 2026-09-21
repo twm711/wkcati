@@ -934,12 +934,13 @@ func (s *Service) ConfirmPreview(c *gin.Context) {
 	var out map[string]interface{}
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var pid, sid, qid int64
-		var phone string
+		var phone, custName string
 		var status string
 		if err := tx.QueryRow(`SELECT project_id,sample_id,COALESCE(queue_id,0),status FROM cti_sample_task WHERE id=? AND assigned_user_id=?`, tid, u.ID).Scan(&pid, &sid, &qid, &status); err != nil || status != "PREVIEW" {
 			rinfo.GinFail(c, rinfo.CodeNotFound, "预览任务不存在或已失效")
 			return errAbort
 		}
+		_ = tx.QueryRow(`SELECT cust_name FROM smp_sample WHERE id=?`, sid).Scan(&custName)
 		if err := tx.QueryRow(`SELECT phone_no FROM smp_phone WHERE sample_id=? AND valid_flag=1 ORDER BY sort_no LIMIT 1`, sid).Scan(&phone); err != nil {
 			return err
 		}
@@ -957,7 +958,41 @@ func (s *Service) ConfirmPreview(c *gin.Context) {
 		if _, err = tx.Exec(`UPDATE smp_sample SET status='ASSIGNED' WHERE id=? AND status='PREVIEW'`, sid); err != nil {
 			return err
 		}
-		out = map[string]interface{}{"taskId": tid, "sampleId": sid, "callId": cid}
+		var qnrID int64
+		var qtitle, qver string
+		_ = tx.QueryRow(`SELECT questionnaire_id FROM prj_project WHERE id=?`, pid).Scan(&qnrID)
+		_ = tx.QueryRow(`SELECT title,version FROM qnr_questionnaire WHERE id=?`, qnrID).Scan(&qtitle, &qver)
+		questions := []map[string]interface{}{}
+		qrows, qerr := tx.Query(`SELECT id,q_no,q_type,title,required,min_value,max_value FROM qnr_question WHERE qnr_id=? ORDER BY q_no`, qnrID)
+		if qerr != nil {
+			return qerr
+		}
+		for qrows.Next() {
+			var qid2, qno int64
+			var qt, qtit string
+			var req int
+			var mn, mx sql.NullFloat64
+			if qerr = qrows.Scan(&qid2, &qno, &qt, &qtit, &req, &mn, &mx); qerr != nil {
+				qrows.Close()
+				return qerr
+			}
+			opts := []map[string]interface{}{}
+			orows, e := tx.Query(`SELECT id,opt_text,opt_value FROM qnr_option WHERE question_id=? ORDER BY opt_no`, qid2)
+			if e != nil {
+				qrows.Close()
+				return e
+			}
+			for orows.Next() {
+				var oid int64
+				var txt, val string
+				_ = orows.Scan(&oid, &txt, &val)
+				opts = append(opts, map[string]interface{}{"optionId": oid, "text": txt, "value": val})
+			}
+			orows.Close()
+			questions = append(questions, map[string]interface{}{"questionId": qid2, "qNo": qno, "type": qt, "title": qtit, "required": req == 1, "min": mnSafe(mn), "max": mxSafe(mx), "options": opts})
+		}
+		qrows.Close()
+		out = map[string]interface{}{"taskId": tid, "sampleId": sid, "callId": cid, "custName": custName, "attempts": 0, "phones": []string{phone}, "currentPhone": phone, "questionnaire": gin.H{"questionnaireId": qnrID, "title": qtitle, "version": qver, "questions": questions}}
 		rinfo.GinOK(c, out, "预览已确认，话务已建立")
 		return errAbort
 	})
