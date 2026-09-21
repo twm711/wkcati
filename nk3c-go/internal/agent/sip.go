@@ -278,6 +278,11 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 			return err
 		}
 		_, _ = tx.Exec(`UPDATE cti_sample_task SET status='COMPLETED',completed_at=? WHERE call_id=? AND status='LEASED'`, ts, callID)
+		// 保留真实业务结果作为一次尝试原因，便于区分未接、忙线、拒接等结果码。
+		var taskID, projectID int64
+		if tx.QueryRow(`SELECT id,project_id FROM cti_sample_task WHERE call_id=? ORDER BY id DESC LIMIT 1`, callID).Scan(&taskID, &projectID) == nil {
+			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,failure_code,failure_detail,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, taskID, projectID, sampleID, callID, "RESULT_CODE", resultCode, resultCode, category, ts)
+		}
 		outData = map[string]interface{}{"sampleId": sampleID, "destination": dest}
 		if hasSheet {
 			outData["sheetStatus"] = sheetStatus
