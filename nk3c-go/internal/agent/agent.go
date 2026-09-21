@@ -218,6 +218,30 @@ func (s *Service) Dispatch(c *gin.Context) {
 	}
 }
 
+// RenewTask extends the current agent task lease after a heartbeat or answer.
+func (s *Service) RenewTask(c *gin.Context) {
+	u := auth.From(c)
+	var req struct {
+		CallID int64 `json:"callId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "callId 参数错误")
+		return
+	}
+	now := time.Now().UTC()
+	res, err := s.db.Exec(`UPDATE cti_sample_task SET lease_until=? WHERE call_id=? AND assigned_user_id=? AND status='LEASED' AND lease_until>=?`,
+		store.TimeFor(s.db.Driver, now.Add(5*time.Minute)), req.CallID, u.ID, store.TimeFor(s.db.Driver, now))
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		rinfo.GinFail(c, rinfo.CodeState, "任务不存在或租约已过期")
+		return
+	}
+	rinfo.GinOK(c, gin.H{"callId": req.CallID, "leaseSeconds": 300}, "任务租约已续期")
+}
+
 // ReapExpiredTasks safely returns lease-expired tasks to the sample pool.
 // It is idempotent and may be called by a periodic worker.
 func (s *Service) ReapExpiredTasks() (int64, error) {
@@ -240,8 +264,15 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 		}
 		rows.Close()
 		for _, x := range tasks {
-			if _, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE id=? AND status='LEASED'`, now, x.id); err != nil {
+			// Claim expiry atomically so two service instances cannot both reclaim
+			// the same lease after the initial SELECT.
+			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE id=? AND status='LEASED' AND lease_until<?`, now, x.id, now)
+			if err != nil {
 				return err
+			}
+			n, _ := res.RowsAffected()
+			if n != 1 {
+				continue
 			}
 			if _, err := tx.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, x.sampleID); err != nil {
 				return err
