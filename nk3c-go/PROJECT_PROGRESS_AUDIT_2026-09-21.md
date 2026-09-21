@@ -179,3 +179,5 @@
 新增 `TestLineRateBucketAndCapacityAreAtomic` 并发测试：8 个并发领取者竞争同一条 capacity=2、rate_limit_per_minute=2 的线路，SQLite 结果严格成功 2 次；同时保留半开探测单成功测试。该测试证明本地原子更新路径有效，MySQL 多实例仍需真实环境验证。
 
 新增 `TestExpiredLineLeaseReleasesCapacity`：模拟线路租约过期后执行回收，验证租约删除且 `active_calls` 从 1 恢复为 0；SIP Dial 失败回滚仍需真实媒体层注入测试。
+
+自动拨号媒体失败路径已补强：无 SIP 域、无数据库线路/启动参数路由、线路领取失败时均尝试 `Finish(callID,"NA")`，避免任务和话务长期停留 DIALING/LEASED；未配置数据库线路仍兼容启动参数路由。E2E 外呼测试和全量 Go 测试通过。

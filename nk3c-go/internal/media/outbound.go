@@ -44,6 +44,12 @@ type OutboundCaller struct {
 // Dial 执行一通外呼自动调研；返回结果码提交数据（供 HTTP 响应）
 func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]interface{}, string, error) {
 	if o.dg == nil {
+		if finisher, ok := o.Driver.(interface {
+			Finish(int64, string) (map[string]interface{}, string, error)
+		}); ok {
+			_, msg, _ := finisher.Finish(callID, "NA")
+			return nil, msg, fmt.Errorf("话务域未启动（--sip-addr）")
+		}
 		return nil, "", fmt.Errorf("话务域未启动（--sip-addr）")
 	}
 	task, err := o.Driver.LoadOutbound(callID)
@@ -53,21 +59,41 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 	var lineID int64
 	var selector interface {
 		ReserveOutboundLine(int64) (agent.OutboundLine, error)
+		HasOutboundLines(int64) (bool, error)
 		RenewOutboundLine(int64, int64) error
 		ReleaseOutboundLine(int64, int64) error
 	}
 	selector, _ = o.Driver.(interface {
 		ReserveOutboundLine(int64) (agent.OutboundLine, error)
+		HasOutboundLines(int64) (bool, error)
 		RenewOutboundLine(int64, int64) error
 		ReleaseOutboundLine(int64, int64) error
 	})
 	if selector != nil {
-		if line, reserveErr := selector.ReserveOutboundLine(callID); reserveErr == nil {
+		line, reserveErr := selector.ReserveOutboundLine(callID)
+		if reserveErr != nil {
+			hasLines, _ := selector.HasOutboundLines(callID)
+			if hasLines {
+				if finisher, ok := o.Driver.(interface {
+					Finish(int64, string) (map[string]interface{}, string, error)
+				}); ok {
+					result, msg, _ := finisher.Finish(callID, "NA")
+					return result, msg, fmt.Errorf("外呼线路不可用: %w", reserveErr)
+				}
+				return nil, "", fmt.Errorf("外呼线路不可用: %w", reserveErr)
+			}
+		} else {
 			lineID, task.CallerID, o.PeerHost, o.PeerPort = line.ID, line.LineNo, line.Host, line.Port
 			defer func() { _ = selector.ReleaseOutboundLine(lineID, callID) }()
 		}
 	}
 	if o.PeerHost == "" || o.PeerPort == 0 {
+		if finisher, ok := o.Driver.(interface {
+			Finish(int64, string) (map[string]interface{}, string, error)
+		}); ok {
+			result, msg, finishErr := finisher.Finish(callID, "NA")
+			return result, msg, fmt.Errorf("未配置外呼路由（--outbound host:port）: %v", finishErr)
+		}
 		return nil, "", fmt.Errorf("未配置外呼路由（--outbound host:port）")
 	}
 	if err != nil {

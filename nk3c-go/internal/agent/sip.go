@@ -53,6 +53,18 @@ type OutboundLine struct {
 	Port   int
 }
 
+// HasOutboundLines 判断话务所属租户是否配置了数据库线路。
+func (s *Service) HasOutboundLines(callID int64) (bool, error) {
+	var tenant, count int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=(SELECT project_id FROM cti_call_record WHERE id=?)`, callID).Scan(&tenant); err != nil {
+		return false, err
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM cti_outbound_line WHERE tenant_id=?`, tenant).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 // ReserveOutboundLine 按优先级和剩余容量原子占用线路。
 func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 	var line OutboundLine
