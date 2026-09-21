@@ -247,3 +247,5 @@ PREDICTIVE Claim 集成测试增加长接通等待样本：20 条 SUCCESS 的 co
 PREDICTIVE Claim 集成测试增加第二轮生产 Claim：第一轮由 current=1 更新至约 0.964，释放测试样本后第二轮读取上一轮倍率并继续 EWMA，断言约 0.939 且 `last_sample_count=20`，证明倍率不会每轮重置为 1；真实 MySQL DSN 未配置，仍待外部执行。
 
 PREDICTIVE 多轮 Claim 测试增加窗口质量变化：第一轮高质量话务得到约 0.964，第二轮将 10 条 SUCCESS 改为 BREAKOFF，呼损/接通率恶化后断言倍率经 EWMA 平滑至约 0.855，而非瞬时跳变；真实 DSN 未配置，仍待外部执行。
+
+PREDICTIVE 多轮测试增加第三轮质量恢复：将 BREAKOFF 样本恢复为 SUCCESS，第三轮读取约 0.855 后按 EWMA 回升至约 0.862，而非瞬时恢复；三轮恶化/恢复链路均只在真实 MySQL DSN 提供时执行。

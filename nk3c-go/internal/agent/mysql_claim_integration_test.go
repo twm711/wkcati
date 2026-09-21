@@ -113,4 +113,20 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if multiplier < 0.853 || multiplier > 0.857 || samples != 20 {
 		t.Fatalf("expected second EWMA state about 0.855/20 after quality deterioration, got %v/%d", multiplier, samples)
 	}
+	// 第三轮恢复质量，验证倍率沿 EWMA 缓慢回升而不是瞬时跳回。
+	if _, err := db.Exec(`UPDATE cti_call_record SET result_code='SUCCESS' WHERE project_id=? AND id>=998100 AND id<998110`, pid); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = db.Exec(`DELETE FROM cti_sample_task WHERE sample_id=?`, sid)
+	_, _ = db.Exec(`DELETE FROM cti_call_record WHERE sample_id=?`, sid)
+	_, _ = db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=?`, sid)
+	if _, ok, err := New(db).ClaimProgressiveTask(); err != nil || !ok {
+		t.Fatalf("expected third predictive claim, ok=%v err=%v", ok, err)
+	}
+	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
+		t.Fatal(err)
+	}
+	if multiplier < 0.860 || multiplier > 0.865 || samples != 20 {
+		t.Fatalf("expected third EWMA recovery about 0.862/20, got %v/%d", multiplier, samples)
+	}
 }
