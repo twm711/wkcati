@@ -221,3 +221,5 @@
 扩展 MySQL 集成测试 `TestMySQLHalfOpenProbeConcurrentUpdate`：16 个 MySQL 连接竞争同一条到期 OPEN 线路，期望只有 1 个条件更新成功进入 HALF_OPEN；当前无 DSN，测试仅 SKIP，真实 MySQL 结果待执行。
 
 修复线路租约回收并发幂等性：只有删除租约实际影响 1 行时才递减 active_calls，避免多个 MySQL 实例同时回收同一过期租约导致重复递减；新增可选 `TestMySQLLeaseReapDeleteIsIdempotent` 覆盖该条件。
+
+新增可选 `TestMySQLLeaseReapAndAcquireRace`：模拟过期租约回收与新任务占用同一线路的交叉竞争，回收成功后新占用最终只能得到一个 active_calls；当前无 DSN，仍待真实 MySQL 执行。

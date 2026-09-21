@@ -125,6 +125,55 @@ func TestMySQLLeaseReapDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestMySQLLeaseReapAndAcquireRace(t *testing.T) {
+	db := mysqlTestDB(t)
+	defer db.Close()
+	const lineID, oldCall, newCall = 998005, 998006, 998007
+	_, _ = db.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id IN (?,?)`, oldCall, newCall)
+	_, _ = db.Exec(`DELETE FROM cti_outbound_line WHERE id=?`, lineID)
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,rate_limit_per_minute,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, lineID, 1, "mysql-test-race", "127.0.0.1", 5060, 1, 1, 1, 1, "CLOSED", 0, 30, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line_lease(call_id,line_id,lease_until,created_at) VALUES(?,?,?,?)`, oldCall, lineID, time.Now().UTC().Add(-time.Minute), time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id IN (?,?)`, oldCall, newCall)
+	defer db.Exec(`DELETE FROM cti_outbound_line WHERE id=?`, lineID)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		tx, _ := db.Begin()
+		res, _ := tx.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, oldCall)
+		if n, _ := res.RowsAffected(); n == 1 {
+			_, _ = tx.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls-1 WHERE id=? AND active_calls>0`, lineID)
+		}
+		_ = tx.Commit()
+	}()
+	go func() {
+		defer wg.Done()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			res, err := db.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls+1 WHERE id=? AND active_calls<capacity`, lineID)
+			if err == nil {
+				if n, _ := res.RowsAffected(); n == 1 {
+					_, _ = db.Exec(`INSERT INTO cti_outbound_line_lease(call_id,line_id,lease_until,created_at) VALUES(?,?,?,?)`, newCall, lineID, time.Now().UTC().Add(time.Minute), time.Now().UTC())
+					return
+				}
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}()
+	wg.Wait()
+	var active int
+	if err := db.QueryRow(`SELECT active_calls FROM cti_outbound_line WHERE id=?`, lineID).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if active != 1 {
+		t.Fatalf("expected exactly one active acquired call, got %d", active)
+	}
+}
+
 func TestMySQLHalfOpenProbeConcurrentUpdate(t *testing.T) {
 	db := mysqlTestDB(t)
 	defer db.Close()
