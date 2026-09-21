@@ -758,3 +758,67 @@ func (s *Service) Audit(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 	}
 }
+
+// ProcessWaitingTasks 自动为有空闲容量的等待任务分配样本。
+func (s *Service) ProcessWaitingTasks() (int64, error) {
+	var assigned int64
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT w.id,w.project_id,w.queue_id,w.agent_id,u.agent_no
+			FROM cti_waiting_task w JOIN sys_user u ON u.id=w.agent_id
+			WHERE w.status='WAITING' ORDER BY w.priority,w.created_at LIMIT 50`)
+		if err != nil {
+			return err
+		}
+		type waiting struct {
+			id, projectID, queueID, agentID int64
+			agentNo                         string
+		}
+		var list []waiting
+		for rows.Next() {
+			var x waiting
+			if err := rows.Scan(&x.id, &x.projectID, &x.queueID, &x.agentID, &x.agentNo); err != nil {
+				rows.Close()
+				return err
+			}
+			list = append(list, x)
+		}
+		rows.Close()
+		for _, w := range list {
+			var capacity, active int
+			_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, w.agentID, w.queueID).Scan(&capacity)
+			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, w.agentID, w.queueID).Scan(&active)
+			if capacity > 0 && active >= capacity {
+				continue
+			}
+			var sampleID int64
+			var phone string
+			now := store.NowFor(s.db.Driver)
+			if err := tx.QueryRow(`SELECT s.id,p.phone_no FROM smp_sample s JOIN smp_phone p ON p.sample_id=s.id AND p.valid_flag=1 WHERE s.project_id=? AND s.status='IDLE' AND (s.next_attempt_at IS NULL OR s.next_attempt_at<=?) ORDER BY s.shuffle_key LIMIT 1`, w.projectID, now).Scan(&sampleID, &phone); err != nil {
+				continue
+			}
+			res, err := tx.Exec(`UPDATE smp_sample SET status='ASSIGNED',owner_agent_id=? WHERE id=? AND status='IDLE'`, w.agentID, sampleID)
+			if err != nil {
+				return err
+			}
+			n, _ := res.RowsAffected()
+			if n != 1 {
+				continue
+			}
+			ts := store.NowFor(s.db.Driver)
+			ins, err := tx.Exec(`INSERT INTO cti_call_record(project_id,sample_id,agent_id,agent_no,caller_no,called_no,status,begin_time) VALUES(?,?,?,?,?,?,'DIALING',?)`, w.projectID, sampleID, w.agentID, w.agentNo, "95533", phone, ts)
+			if err != nil {
+				return err
+			}
+			callID, _ := ins.LastInsertId()
+			if _, err = tx.Exec(`INSERT INTO cti_sample_task(project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,?,?,?,'LEASED',?,?)`, w.projectID, sampleID, callID, w.queueID, w.agentID, ts, store.TimeFor(s.db.Driver, time.Now().UTC().Add(5*time.Minute))); err != nil {
+				return err
+			}
+			if _, err = tx.Exec(`UPDATE cti_waiting_task SET status='ASSIGNED',assigned_at=? WHERE id=? AND status='WAITING'`, ts, w.id); err != nil {
+				return err
+			}
+			assigned++
+		}
+		return nil
+	})
+	return assigned, err
+}

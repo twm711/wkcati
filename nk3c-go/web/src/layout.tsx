@@ -9,6 +9,7 @@ import {
   AudioOutlined,
   WarningOutlined,
   ApiOutlined,
+  UnorderedListOutlined,
   LogoutOutlined,
 } from '@ant-design/icons'
 import { Outlet, useLocation, useNavigate, Navigate } from 'react-router-dom'
@@ -65,6 +66,7 @@ export default function Layout() {
             { key: '/ivr', icon: <AudioOutlined />, label: 'IVR 互动' },
             { key: '/dead-tasks', icon: <WarningOutlined />, label: '死信任务' },
             { key: '/lines', icon: <ApiOutlined />, label: '外呼线路' },
+            { key: '/waiting', icon: <UnorderedListOutlined />, label: '等待队列' },
           ]}
         />
       </AntLayout.Sider>

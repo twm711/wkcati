@@ -72,6 +72,11 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
+				if n, err := leaseAgent.ProcessWaitingTasks(); err != nil {
+					log.Printf("[等待队列] 自动派样失败: %v", err)
+				} else if n > 0 {
+					log.Printf("[等待队列] 自动分配 %d 个等待任务", n)
+				}
 				if _, err := leaseAgent.ReapOutboundLineLeases(); err != nil {
 					log.Printf("[线路容量] 过期租约清理失败: %v", err)
 				}

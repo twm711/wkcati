@@ -14,6 +14,7 @@ import Workorders from './pages/Workorders'
 import Ivr from './pages/Ivr'
 import DeadTasks from './pages/DeadTasks'
 import Lines from './pages/Lines'
+import Waiting from './pages/Waiting'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -31,6 +32,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/ivr" element={<Ivr />} />
               <Route path="/dead-tasks" element={<DeadTasks />} />
               <Route path="/lines" element={<Lines />} />
+              <Route path="/waiting" element={<Waiting />} />
             </Route>
             <Route path="*" element={<Navigate to="/agent" replace />} />
           </Routes>
