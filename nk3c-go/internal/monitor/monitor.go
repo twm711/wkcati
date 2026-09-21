@@ -249,12 +249,13 @@ func (s *Service) LineHealth(c *gin.Context) {
 }
 
 type outboundLineReq struct {
-	LineNo   string `json:"lineNo" binding:"required"`
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	Priority int    `json:"priority"`
-	Capacity int    `json:"capacity"`
-	Enabled  *bool  `json:"enabled"`
+	LineNo             string `json:"lineNo" binding:"required"`
+	Host               string `json:"host"`
+	Port               int    `json:"port"`
+	Priority           int    `json:"priority"`
+	Capacity           int    `json:"capacity"`
+	Enabled            *bool  `json:"enabled"`
+	RateLimitPerMinute int    `json:"rateLimitPerMinute"`
 }
 
 // Lines 返回当前租户外呼线路及容量状态。
@@ -264,7 +265,7 @@ func (s *Service) Lines(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
 		return
 	}
-	q := `SELECT id,line_no,COALESCE(host,''),port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,COALESCE(opened_until,''),created_at FROM cti_outbound_line`
+	q := `SELECT id,line_no,COALESCE(host,''),port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,COALESCE(opened_until,''),created_at,rate_limit_per_minute FROM cti_outbound_line`
 	args := []interface{}{}
 	if !auth.HasRoleP(u, "domainAdmin") {
 		q += ` WHERE tenant_id=?`
@@ -281,8 +282,9 @@ func (s *Service) Lines(c *gin.Context) {
 	for rows.Next() {
 		var id, port, en, pri, cap, active, streak int64
 		var no, host, state, opened, created string
-		if rows.Scan(&id, &no, &host, &port, &en, &pri, &cap, &active, &state, &streak, &opened, &created) == nil {
-			out = append(out, gin.H{"id": id, "lineNo": no, "host": host, "port": port, "enabled": en == 1, "priority": pri, "capacity": cap, "activeCalls": active, "available": cap > active && state != "OPEN", "circuitState": state, "failureStreak": streak, "openedUntil": opened, "createdAt": created})
+		var rateLimit int64
+		if rows.Scan(&id, &no, &host, &port, &en, &pri, &cap, &active, &state, &streak, &opened, &created, &rateLimit) == nil {
+			out = append(out, gin.H{"id": id, "lineNo": no, "host": host, "port": port, "enabled": en == 1, "priority": pri, "capacity": cap, "activeCalls": active, "rateLimitPerMinute": rateLimit, "available": cap > active && state != "OPEN", "circuitState": state, "failureStreak": streak, "openedUntil": opened, "createdAt": created})
 		}
 	}
 	rinfo.GinOK(c, out, "ok")
@@ -309,6 +311,13 @@ func (s *Service) UpsertLine(c *gin.Context) {
 	if req.Capacity <= 0 {
 		req.Capacity = 10
 	}
+	if req.RateLimitPerMinute == 0 {
+		req.RateLimitPerMinute = 30
+	}
+	if req.RateLimitPerMinute < 0 || req.RateLimitPerMinute > 10000 {
+		rinfo.GinFail(c, rinfo.CodeParam, "线路速率必须在 0 到 10000 之间")
+		return
+	}
 	enabled := 1
 	if req.Enabled != nil && !(*req.Enabled) {
 		enabled = 0
@@ -317,19 +326,46 @@ func (s *Service) UpsertLine(c *gin.Context) {
 	_ = s.db.QueryRow(`SELECT id FROM cti_outbound_line WHERE tenant_id=? AND line_no=?`, u.TenantID, req.LineNo).Scan(&id)
 	if id == 0 {
 		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_outbound_line`).Scan(&id)
-		_, err := s.db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,created_at) VALUES(?,?,?,?,?,?,?,?,0,?)`, id, u.TenantID, req.LineNo, req.Host, req.Port, enabled, req.Priority, req.Capacity, store.NowFor(s.db.Driver))
+		_, err := s.db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,rate_limit_per_minute,created_at) VALUES(?,?,?,?,?,?,?,?,0,?,?)`, id, u.TenantID, req.LineNo, req.Host, req.Port, enabled, req.Priority, req.Capacity, req.RateLimitPerMinute, store.NowFor(s.db.Driver))
 		if err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 			return
 		}
 	} else {
-		_, err := s.db.Exec(`UPDATE cti_outbound_line SET host=?,port=?,enabled=?,priority=?,capacity=? WHERE id=? AND tenant_id=?`, req.Host, req.Port, enabled, req.Priority, req.Capacity, id, u.TenantID)
+		_, err := s.db.Exec(`UPDATE cti_outbound_line SET host=?,port=?,enabled=?,priority=?,capacity=?,rate_limit_per_minute=? WHERE id=? AND tenant_id=?`, req.Host, req.Port, enabled, req.Priority, req.Capacity, req.RateLimitPerMinute, id, u.TenantID)
 		if err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 			return
 		}
 	}
 	rinfo.GinOK(c, gin.H{"id": id}, "线路已保存")
+}
+
+// UpdateLineRate 仅修改线路基础分钟速率，避免覆盖其他线路配置。
+func (s *Service) UpdateLineRate(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要机构管理员权限")
+		return
+	}
+	var req struct {
+		LineNo             string `json:"lineNo" binding:"required"`
+		RateLimitPerMinute int    `json:"rateLimitPerMinute"`
+	}
+	if c.ShouldBindJSON(&req) != nil || req.RateLimitPerMinute < 0 || req.RateLimitPerMinute > 10000 {
+		rinfo.GinFail(c, rinfo.CodeParam, "线路速率必须在 0 到 10000 之间")
+		return
+	}
+	res, err := s.db.Exec(`UPDATE cti_outbound_line SET rate_limit_per_minute=? WHERE tenant_id=? AND line_no=?`, req.RateLimitPerMinute, u.TenantID, req.LineNo)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "线路不存在")
+		return
+	}
+	rinfo.GinOK(c, gin.H{"lineNo": req.LineNo, "rateLimitPerMinute": req.RateLimitPerMinute}, "线路速率已更新")
 }
 
 // LineCircuitEvents 查询线路熔断状态变化时间线。

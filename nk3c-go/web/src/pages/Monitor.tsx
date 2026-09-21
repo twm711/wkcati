@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Card, Statistic, Row, Col, Tag, Table, Button, App, Input, Space, Typography, Modal, Popconfirm } from 'antd'
+import { Card, Statistic, Row, Col, Tag, Table, Button, App, Input, InputNumber, Space, Typography, Modal, Popconfirm } from 'antd'
 import { ReloadOutlined, WifiOutlined, LinkOutlined } from '@ant-design/icons'
 import { api, hasRole, rawSession } from '../api'
 
@@ -26,6 +26,7 @@ export default function Monitor() {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const canAudit = hasRole('groupAdmin')
+  const canManageLines = hasRole('orgAdmin') || hasRole('domainAdmin')
 
   // 轮询兜底：话务流水/审核队列无 WS 推送，墙面则优先走 WS
   const load = useCallback(async () => {
@@ -110,6 +111,12 @@ export default function Monitor() {
       setQcWsLive(false)
     }
   }, [canAudit])
+
+  const updateLineRate = async (line: LineRuntime, value: number | null) => {
+    if (value == null || value < 0 || value > 10000) return
+    const r = await api.post('/api/monitor/lines/rate', { lineNo: line.line, rateLimitPerMinute: value })
+    if (r.success) { message.success(`线路 ${line.line} 基础速率已更新`); load() } else message.error(r.message)
+  }
 
   const forceCheckout = async (userId: number, agentNo: string) => {
     try {
@@ -223,7 +230,7 @@ export default function Monitor() {
           columns={[
             { title: '线路', dataIndex: 'line' },
             { title: '呼损率', dataIndex: 'abandonRate', render: (v: number) => <Tag color={v >= 20 ? 'red' : v >= 5 ? 'orange' : 'green'}>{v.toFixed(1)}%</Tag> },
-            { title: '速率', render: (_, r) => `${r.effectiveRatePerMinute.toFixed(1)} / ${r.rateLimitPerMinute}/分钟` },
+            { title: '速率', render: (_, r) => canManageLines ? <Space><InputNumber size="small" min={0} max={10000} defaultValue={r.rateLimitPerMinute} onPressEnter={(e) => updateLineRate(r, Number((e.target as HTMLInputElement).value))} /><Typography.Text type="secondary">当前 {r.effectiveRatePerMinute.toFixed(1)}</Typography.Text></Space> : `${r.effectiveRatePerMinute.toFixed(1)} / ${r.rateLimitPerMinute}/分钟` },
             { title: '状态', render: (_, r) => <Tag color={r.circuitState === 'OPEN' ? 'red' : r.recoveryCooldownSeconds > 0 ? 'orange' : 'green'}>{r.circuitState || 'CLOSED'}</Tag> },
             { title: '失败连击', dataIndex: 'failureStreak' },
             { title: '恢复冷却', render: (_, r) => r.recoveryCooldownSeconds > 0 ? `${r.recoveryCooldownSeconds}s` : '-' },
