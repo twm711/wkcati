@@ -60,7 +60,14 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 	}
 	uri := sip.Uri{User: digitsOnly(task.Phone), Host: o.PeerHost, Port: o.PeerPort}
 	lastSIPStatus := 0
-	opts := diago.InviteOptions{Transport: "udp", OnResponse: func(res *sip.Response) error { lastSIPStatus = res.StatusCode; return nil }}
+	lastResponseReason := ""
+	opts := diago.InviteOptions{Transport: "udp", OnResponse: func(res *sip.Response) error {
+		lastSIPStatus = res.StatusCode
+		if headers := res.GetHeaders("Reason"); len(headers) > 0 {
+			lastResponseReason = headers[len(headers)-1].Value()
+		}
+		return nil
+	}}
 	opts.Headers = append(opts.Headers, &sip.FromHeader{
 		DisplayName: "NK3C 调查中心",
 		Address:     sip.Uri{User: task.CallerID, Host: "nk3c.local"},
@@ -71,7 +78,14 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 		code := classifySIPFailure(lastSIPStatus)
 		// 未接通按 SIP 最终响应映射为统一结果码；无法取得响应时兼容为 NA。
 		slog.Warn("外呼未接通", "call", callID, "phone", task.Phone, "sip_status", lastSIPStatus, "result_code", code, "err", err)
-		return o.Finish(callID, code)
+		detail := sipFailureDetail(lastSIPStatus, lastResponseReason)
+		result, msg, finishErr := o.Finish(callID, code)
+		if recorder, ok := o.Driver.(interface {
+			RecordFailureCause(int64, string, string) error
+		}); ok {
+			_ = recorder.RecordFailureCause(callID, code, detail)
+		}
+		return result, msg, finishErr
 	}
 	o.register(callID, func(ctx context.Context) error { return c.Hangup(ctx) })
 	defer o.unregister(callID)
@@ -153,6 +167,13 @@ func (o *OutboundCaller) askOne(ctx context.Context, tap *audioTap, callID int64
 // Finish 收尾结果码（桥接业务核心）
 func (o *OutboundCaller) Finish(callID int64, code string) (map[string]interface{}, string, error) {
 	return o.Driver.FinishOutbound(callID, code)
+}
+
+func sipFailureDetail(status int, reason string) string {
+	if reason == "" {
+		return fmt.Sprintf("SIP %d", status)
+	}
+	return fmt.Sprintf("SIP %d; Reason: %s", status, reason)
 }
 
 // classifySIPFailure 将 SIP 最终响应映射到业务结果码。

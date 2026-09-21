@@ -97,6 +97,16 @@ func (s *Service) FinishOutbound(callID int64, resultCode string) (map[string]in
 	return s.resultCore(0, callID, resultCode)
 }
 
+// RecordFailureCause enriches the latest result attempt with SIP/Q.850 diagnostics.
+func (s *Service) RecordFailureCause(callID int64, resultCode, detail string) error {
+	var attemptID int64
+	if err := s.db.QueryRow(`SELECT id FROM cti_task_attempt WHERE call_id=? AND reason='RESULT_CODE' ORDER BY id DESC LIMIT 1`, callID).Scan(&attemptID); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE cti_task_attempt SET failure_code=?,failure_detail=? WHERE id=?`, resultCode, detail, attemptID)
+	return err
+}
+
 // ── 核心（HTTP handler 与 SIP 桥共用；BizErr=业务分支已定论、事务提交）──────────
 
 func (s *Service) answerCore(agentID, callID, questionID int64, optionIDs []int64, answerText string, numeric *float64) (int64, string, error) {
