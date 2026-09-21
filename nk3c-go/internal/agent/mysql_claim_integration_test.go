@@ -55,7 +55,11 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := int64(0); i < 20; i++ {
-		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,status,result_code,begin_time,connect_time,end_time) VALUES(?,?,?, ?,?,?,?)`, 998100+i, pid, "CLOSED", "SUCCESS", time.Now().UTC().Add(-time.Duration(i+1)*time.Minute), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Add(2*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute)); err != nil {
+		result := "BUSY"
+		if i < 10 {
+			result = "SUCCESS"
+		}
+		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,status,result_code,begin_time,connect_time,end_time) VALUES(?,?,?, ?,?,?,?)`, 998100+i, pid, "CLOSED", result, time.Now().UTC().Add(-time.Duration(i+1)*time.Minute), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Add(2*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -84,7 +88,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
 		t.Fatal(err)
 	}
-	if multiplier != 1 || samples != 20 {
-		t.Fatalf("expected predictive state 1/20 after minimum samples, got %v/%d", multiplier, samples)
+	if multiplier < 1.149 || multiplier > 1.151 || samples != 20 {
+		t.Fatalf("expected predictive EWMA state 1.15/20 at 50%% connect rate, got %v/%d", multiplier, samples)
 	}
 }

@@ -233,3 +233,5 @@
 将生产 MySQL Claim 集成测试切换为 PREDICTIVE，`max_concurrent=2`、READY 坐席为 1，8 个并发调用仍只允许 1 次领取；新增断言最小样本保护保持 `current_multiplier=1`、`last_sample_count=0`。真实 DSN 未配置，测试待外部执行。
 
 PREDICTIVE MySQL Claim 集成测试补充 20 条近期 SUCCESS 历史话务，达到最小样本阈值后断言 `last_sample_count=20`、接通率为 100% 时 `current_multiplier=1`；真实 DSN 未配置，仍待外部执行。
+
+PREDICTIVE MySQL Claim 集成测试将 20 条历史话务改为 10 条 SUCCESS、10 条 BUSY，接通率 50% 时断言最小样本阈值通过、`last_sample_count=20`，并按 alpha=0.30 从 current=1 平滑至 `current_multiplier≈1.15`；真实 DSN 未配置，仍待外部执行。
