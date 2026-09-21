@@ -1033,15 +1033,21 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 		if mode == "PREDICTIVE" {
 			var ready int64
 			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_agent_state st JOIN sys_user u ON u.id=st.user_id WHERE st.state='READY' AND u.tenant_id=(SELECT tenant_id FROM prj_project WHERE id=?)`, pid).Scan(&ready)
-			var total, connected int64
-			_ = tx.QueryRow(`SELECT COUNT(*),COALESCE(SUM(CASE WHEN result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),0) FROM cti_call_record WHERE project_id=? AND status='CLOSED'`, pid).Scan(&total, &connected)
+			var total, connected, abandoned int64
+			_ = tx.QueryRow(`SELECT COUNT(*),COALESCE(SUM(CASE WHEN result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN result_code='BREAKOFF' THEN 1 ELSE 0 END),0) FROM cti_call_record WHERE project_id=? AND status='CLOSED'`, pid).Scan(&total, &connected, &abandoned)
 			connectRate := 0.5
+			abandonRate := 0.0
 			if total > 0 {
 				connectRate = float64(connected) / float64(total)
+				abandonRate = float64(abandoned) / float64(total) * 100
 			}
 			multiplier := 1.0 + (1.0 - connectRate)
-			if abandonTarget > 0 && abandonTarget < 3 {
-				multiplier = 1.0 + abandonTarget/100.0
+			// 呼损高于目标时立即收缩，明显低于目标时才小幅增加，避免振荡。
+			if abandonTarget > 0 && abandonRate > abandonTarget {
+				multiplier *= 0.5
+			}
+			if abandonTarget > 0 && abandonRate < abandonTarget/2 {
+				multiplier *= 1.1
 			}
 			limit = int64(float64(ready) * multiplier)
 			if limit < 1 {

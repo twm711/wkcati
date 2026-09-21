@@ -453,7 +453,7 @@ func (s *Service) DialRuntime(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
 		return
 	}
-	q := `SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.enabled,(SELECT COUNT(*) FROM cti_sample_task t WHERE t.project_id=d.project_id AND t.status='LEASED'),(SELECT COUNT(*) FROM cti_agent_state a JOIN sys_user su ON su.id=a.user_id WHERE a.state='READY' AND su.tenant_id=p.tenant_id) FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id`
+	q := `SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.enabled,(SELECT COUNT(*) FROM cti_sample_task t WHERE t.project_id=d.project_id AND t.status='LEASED'),(SELECT COUNT(*) FROM cti_agent_state a JOIN sys_user su ON su.id=a.user_id WHERE a.state='READY' AND su.tenant_id=p.tenant_id),(SELECT COUNT(*) FROM cti_call_record c WHERE c.project_id=d.project_id AND c.status='CLOSED'),(SELECT COUNT(*) FROM cti_call_record c WHERE c.project_id=d.project_id AND c.status='CLOSED' AND c.result_code='BREAKOFF') FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id`
 	args := []interface{}{}
 	if !auth.HasRoleP(u, "domainAdmin") {
 		q += ` WHERE p.tenant_id=?`
@@ -468,11 +468,15 @@ func (s *Service) DialRuntime(c *gin.Context) {
 	defer rows.Close()
 	out := []map[string]interface{}{}
 	for rows.Next() {
-		var pid, mc, en, active, ready int64
+		var pid, mc, en, active, ready, totalCalls, abandoned int64
 		var mode string
 		var abandon float64
-		if rows.Scan(&pid, &mode, &mc, &abandon, &en, &active, &ready) == nil {
-			out = append(out, gin.H{"projectId": pid, "mode": mode, "enabled": en == 1, "activeCalls": active, "maxConcurrent": mc, "availableAgents": ready, "headroom": mc - active, "abandonTarget": abandon, "running": en == 1 && active < mc && ready > 0})
+		if rows.Scan(&pid, &mode, &mc, &abandon, &en, &active, &ready, &totalCalls, &abandoned) == nil {
+			abandonRate := float64(0)
+			if totalCalls > 0 {
+				abandonRate = float64(abandoned) / float64(totalCalls) * 100
+			}
+			out = append(out, gin.H{"projectId": pid, "mode": mode, "enabled": en == 1, "activeCalls": active, "maxConcurrent": mc, "availableAgents": ready, "headroom": mc - active, "abandonTarget": abandon, "abandonRate": abandonRate, "running": en == 1 && active < mc && ready > 0})
 		}
 	}
 	rinfo.GinOK(c, out, "ok")
