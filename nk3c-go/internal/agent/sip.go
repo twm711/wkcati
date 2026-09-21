@@ -53,6 +53,12 @@ type OutboundLine struct {
 	Port   int
 }
 
+// SetOutboundCaller 记录实际选中的外呼线路，供失败统计和线路熔断使用。
+func (s *Service) SetOutboundCaller(callID int64, callerNo string) error {
+	_, err := s.db.Exec(`UPDATE cti_call_record SET caller_no=? WHERE id=?`, callerNo, callID)
+	return err
+}
+
 // HasOutboundLines 判断话务所属租户是否配置了数据库线路。
 func (s *Service) HasOutboundLines(callID int64) (bool, error) {
 	var tenant, count int64

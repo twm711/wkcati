@@ -197,3 +197,5 @@
 新增真实 SIP 404 Not Found E2E：被叫模拟器返回 404，外呼映射为 INVALID，话务收尾为 CLOSED/INVALID；486、480、408、404 真实失败链路均已验证。
 
 新增真实 SIP 603 Global Decline E2E：被叫模拟器返回 603，外呼映射为 REFUSE，话务收尾为 CLOSED/REFUSE；忙线、不可用、超时、无效号码和拒接五类真实 SIP 失败均已验证。
+
+真实 SIP 486 E2E 已接入数据库线路：选线后回写实际 caller_no，486 映射 BUSY，话务 CLOSED，线路租约释放且 active_calls=0；新增 `SetOutboundCaller` 修复线路失败统计无法关联实际选线的问题。

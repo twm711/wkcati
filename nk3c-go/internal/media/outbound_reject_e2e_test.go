@@ -27,6 +27,9 @@ func TestOutboundInvite486FinishesBusy(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,status) VALUES(9502,1,'486测试','LEASED')`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,rate_limit_per_minute,created_at) VALUES(9601,1,'line-486','127.0.0.1',25273,1,1,1,0,'CLOSED',0,30,?)`, store.NowFor(db.Driver)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,sample_id,agent_id,called_no,caller_no,status,begin_time) VALUES(9501,1,9502,0,'13800000999','','DIALING',?)`, store.NowFor(db.Driver)); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +64,13 @@ func TestOutboundInvite486FinishesBusy(t *testing.T) {
 	}
 	if status != "CLOSED" || result != "BUSY" {
 		t.Fatalf("expected CLOSED/BUSY, got %s/%s", status, result)
+	}
+	var active int
+	if err := db.QueryRow(`SELECT active_calls FROM cti_outbound_line WHERE id=?`, 9601).Scan(&active); err != nil {
+		t.Fatal(err)
+	}
+	if active != 0 {
+		t.Fatalf("expected line active_calls=0, got %d", active)
 	}
 }
 

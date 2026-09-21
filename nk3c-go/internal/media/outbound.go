@@ -80,6 +80,9 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 			}
 		} else {
 			lineID, task.CallerID, o.PeerHost, o.PeerPort = line.ID, line.LineNo, line.Host, line.Port
+			if setter, ok := o.Driver.(interface{ SetOutboundCaller(int64, string) error }); ok {
+				_ = setter.SetOutboundCaller(callID, line.LineNo)
+			}
 			defer func() { _ = selector.ReleaseOutboundLine(lineID, callID) }()
 		}
 	}
