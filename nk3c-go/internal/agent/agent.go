@@ -95,11 +95,25 @@ func (s *Service) Dispatch(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeState, "坐席当前状态 "+agentState+"，不可派样")
 		return
 	}
-	projectID := c.DefaultQuery("projectId", "1")
+	projectID := c.Query("projectId")
 	var okCall, okSample int64
 	var okName string
 	// 主事务：串行化取样（生产 MySQL 为 SELECT ... FOR UPDATE SKIP LOCKED）
 	err := s.db.Tx(func(tx *sql.Tx) error {
+		if projectID == "" {
+			var chosen int64
+			var pickErr error
+			if auth.HasRoleP(u, "domainAdmin") {
+				pickErr = tx.QueryRow(`SELECT p.id FROM prj_project p JOIN prj_queue pq ON pq.project_id=p.id JOIN cti_queue q ON q.id=pq.queue_id JOIN cti_agent_queue aq ON aq.queue_id=q.id AND aq.user_id=? AND aq.enabled=1 WHERE p.status='RUNNING' AND q.status=1 ORDER BY q.priority,pq.priority,p.id LIMIT 1`, u.ID).Scan(&chosen)
+			} else {
+				pickErr = tx.QueryRow(`SELECT p.id FROM prj_project p JOIN prj_queue pq ON pq.project_id=p.id JOIN cti_queue q ON q.id=pq.queue_id JOIN cti_agent_queue aq ON aq.queue_id=q.id AND aq.user_id=? AND aq.enabled=1 WHERE p.status='RUNNING' AND q.status=1 AND p.tenant_id=? AND (p.group_id=0 OR p.group_id=?) ORDER BY q.priority,pq.priority,p.id LIMIT 1`, u.ID, u.TenantID, u.GroupID).Scan(&chosen)
+			}
+			if pickErr != nil {
+				rinfo.GinOK(c, nil, "派样失败：没有可用的优先级队列项目")
+				return errAbort
+			}
+			projectID = strconv.FormatInt(chosen, 10)
+		}
 		var pstatus string
 		var qid, tenantID, groupID int64
 		if err := tx.QueryRow(`SELECT status,questionnaire_id,tenant_id,group_id FROM prj_project WHERE id=?`, projectID).Scan(&pstatus, &qid, &tenantID, &groupID); err != nil {
