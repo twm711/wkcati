@@ -1022,12 +1022,36 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 	var callID int64
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var pid, maxConcurrent int64
-		if err := tx.QueryRow(`SELECT d.project_id,d.max_concurrent FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode='PROGRESSIVE' AND p.status='RUNNING' ORDER BY d.project_id LIMIT 1`).Scan(&pid, &maxConcurrent); err != nil {
+		var mode string
+		var abandonTarget float64
+		if err := tx.QueryRow(`SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode IN ('PROGRESSIVE','PREDICTIVE') AND p.status='RUNNING' ORDER BY d.project_id LIMIT 1`).Scan(&pid, &mode, &maxConcurrent, &abandonTarget); err != nil {
 			return err
 		}
 		var active int64
 		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE project_id=? AND status='LEASED'`, pid).Scan(&active)
-		if active >= maxConcurrent {
+		limit := maxConcurrent
+		if mode == "PREDICTIVE" {
+			var ready int64
+			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_agent_state st JOIN sys_user u ON u.id=st.user_id WHERE st.state='READY' AND u.tenant_id=(SELECT tenant_id FROM prj_project WHERE id=?)`, pid).Scan(&ready)
+			var total, connected int64
+			_ = tx.QueryRow(`SELECT COUNT(*),COALESCE(SUM(CASE WHEN result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),0) FROM cti_call_record WHERE project_id=? AND status='CLOSED'`, pid).Scan(&total, &connected)
+			connectRate := 0.5
+			if total > 0 {
+				connectRate = float64(connected) / float64(total)
+			}
+			multiplier := 1.0 + (1.0 - connectRate)
+			if abandonTarget > 0 && abandonTarget < 3 {
+				multiplier = 1.0 + abandonTarget/100.0
+			}
+			limit = int64(float64(ready) * multiplier)
+			if limit < 1 {
+				limit = 1
+			}
+			if limit > maxConcurrent {
+				limit = maxConcurrent
+			}
+		}
+		if active >= limit {
 			return errAbort
 		}
 		var agentID, queueID int64

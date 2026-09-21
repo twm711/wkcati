@@ -126,11 +126,11 @@ func main() {
 						select {
 						case <-ticker.C:
 							if callID, ok, err := dialAgent.ClaimProgressiveTask(); err != nil {
-								log.Printf("[渐进拨号] 领取任务失败: %v", err)
+								log.Printf("[自动拨号] 领取任务失败: %v", err)
 							} else if ok {
 								go func(id int64) {
 									if _, _, e := srv.Outbound.Dial(ctx, id); e != nil {
-										log.Printf("[渐进拨号] 外呼失败 call=%d: %v", id, e)
+										log.Printf("[自动拨号] 外呼失败 call=%d: %v", id, e)
 									}
 								}(callID)
 							}
