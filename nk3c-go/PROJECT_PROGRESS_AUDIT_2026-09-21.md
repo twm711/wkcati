@@ -183,3 +183,5 @@
 自动拨号媒体失败路径已补强：无 SIP 域、无数据库线路/启动参数路由、线路领取失败时均尝试 `Finish(callID,"NA")`，避免任务和话务长期停留 DIALING/LEASED；未配置数据库线路仍兼容启动参数路由。E2E 外呼测试和全量 Go 测试通过。
 
 新增 `TestDialWithoutSIPDomainFinishesClaimedCall` 故障注入测试：模拟已领取 DIALING 话务但 SIP 域未启动，验证 Dial 返回错误且话务最终变为 CLOSED；完整 Go 测试通过。线路不可用和无路由场景共用同一收尾路径，仍需 MySQL/真实 SIP 故障注入。
+
+新增 SIP 失败结果映射测试，覆盖 BUSY/INVALID/REFUSE/NA 及未知响应默认 NA；当前已验证分类和无 SIP 域收尾，目标不可达/486 等真实 Invite 拒绝响应的完整媒体 E2E 仍待补齐。
