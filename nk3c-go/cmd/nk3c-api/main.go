@@ -144,7 +144,7 @@ func main() {
 		}
 		srv.OnFinish = func(st ivr.NodeState) { // 呼入录音路径回填话务日志
 			if st.RecordFile != "" {
-				_, _ = db.Exec(`UPDATE ivr_call_log SET record_file=? WHERE id=(SELECT MAX(id) FROM ivr_call_log WHERE caller_no=?)`,
+				_, _ = db.Exec(`UPDATE ivr_call_log SET record_file=? WHERE id=(SELECT id FROM ivr_call_log WHERE caller_no=? AND record_file IS NULL ORDER BY id DESC LIMIT 1)`,
 					st.RecordFile, st.CallerNo)
 			}
 		}

@@ -294,14 +294,16 @@ func (s *Service) finalize(sess *session) {
 	end := store.NowISO()
 	path, _ := json.Marshal(sess.Path)
 	ans, _ := json.Marshal(sess.Answers)
-	_, err := s.db.Exec(`INSERT INTO ivr_call_log(caller_no,start_time,end_time,outcome,path_json,answers_json,project_id) VALUES(?,?,?,?,?,?,?)`,
+	res, err := s.db.Exec(`INSERT INTO ivr_call_log(caller_no,start_time,end_time,outcome,path_json,answers_json,project_id) VALUES(?,?,?,?,?,?,?)`,
 		sess.CallerNo, sess.Start, end, sess.Outcome, string(path), string(ans), sess.ProjectID)
 	if err != nil {
 		return
 	}
+	callID, err := res.LastInsertId()
+	if err != nil {
+		return
+	}
 	if strings.HasPrefix(sess.Outcome, "TRANSFER") && s.wk != nil {
-		var callID int64
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM cti_call_record`).Scan(&callID)
 		s.wk.CreateFromIVR(sess.ProjectID, callID, sess.CallerNo, strings.Join(sess.Path, " → "), end)
 	}
 }

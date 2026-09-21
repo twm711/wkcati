@@ -267,3 +267,5 @@ PREDICTIVE 多轮测试增加第四轮短样本保护：将窗口历史减少到
 继续清理应用层 MAX(id)+1：`UpsertLine` 改为省略 id 让 SQLite/MySQL 自增并读取 LastInsertId；`UpdateLineRate` 审计记录改为省略 id，依赖 `cti_line_rate_audit` 自增主键；线路配置和速率审计不再通过 MAX(id)+1 生成 ID。由于当前环境 Go 工具链缺失，本轮未能重新执行 gofmt/go test，待工具链恢复后必须全量验证。
 
 继续清理应用层 ID：`internal/agent/agent.go` 的等待任务和预览样本任务改为省略 ID 并使用 `LastInsertId()`；`internal/agent/sip.go` 的自动黑名单记录改为数据库自增 ID。SQLite 使用 `ON CONFLICT`，MySQL 使用 `INSERT IGNORE`，均不再传入应用层计算的 ID。Go 工具链仍缺失，本轮未运行 gofmt/go test。
+
+继续清理最新记录定位：IVR `finalize` 现在保存 `ivr_call_log` 后通过 `LastInsertId()` 获取本次记录 ID，并将该 ID 传入转人工工单，删除了从 `cti_call_record` 使用 `MAX(id)` 猜测呼叫的路径；SIP 入站录音回填改为按 caller_no、空录音和 id 倒序定位，删除 `MAX(id)` 子查询。该录音回填仍依赖 caller_no 关联，真实并发同号呼入需要集成测试确认。
