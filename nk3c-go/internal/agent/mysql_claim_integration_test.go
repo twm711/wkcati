@@ -94,6 +94,19 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	if multiplier < 0.963 || multiplier > 0.965 || samples != 20 {
-		t.Fatalf("expected predictive connect-delay state 0.964/20, got %v/%d", multiplier, samples)
+		t.Fatalf("expected first predictive state 0.964/20, got %v/%d", multiplier, samples)
+	}
+	// 释放第一轮测试领取的样本，再次领取，验证第二轮读取上一轮倍率而非重置为 1。
+	_, _ = db.Exec(`DELETE FROM cti_sample_task WHERE sample_id=?`, sid)
+	_, _ = db.Exec(`DELETE FROM cti_call_record WHERE sample_id=?`, sid)
+	_, _ = db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=?`, sid)
+	if _, ok, err := New(db).ClaimProgressiveTask(); err != nil || !ok {
+		t.Fatalf("expected second predictive claim, ok=%v err=%v", ok, err)
+	}
+	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
+		t.Fatal(err)
+	}
+	if multiplier < 0.937 || multiplier > 0.940 || samples != 20 {
+		t.Fatalf("expected second EWMA state about 0.939/20, got %v/%d", multiplier, samples)
 	}
 }
