@@ -801,7 +801,12 @@ func (s *Service) ProcessWaitingTasks() (int64, error) {
 			list = append(list, x)
 		}
 		rows.Close()
+		assignedAgents := map[int64]bool{}
 		for _, w := range list {
+			// 每轮每个坐席最多自动分配一个，避免单个坐席/队列长期霸占调度批次。
+			if assignedAgents[w.agentID] {
+				continue
+			}
 			var capacity, active int
 			_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, w.agentID, w.queueID).Scan(&capacity)
 			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, w.agentID, w.queueID).Scan(&active)
@@ -835,6 +840,7 @@ func (s *Service) ProcessWaitingTasks() (int64, error) {
 				return err
 			}
 			assigned++
+			assignedAgents[w.agentID] = true
 			if s.notifier != nil {
 				s.notifier.Publish("WAITING_ASSIGNED", map[string]interface{}{"callId": callID, "sampleId": sampleID, "agentId": w.agentID, "queueId": w.queueID})
 			}
