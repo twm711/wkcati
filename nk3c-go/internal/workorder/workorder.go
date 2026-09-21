@@ -32,13 +32,24 @@ func (s *Service) CreateFromIVR(projectID, callID int64, callerNo, path string, 
 }
 
 func (s *Service) List(c *gin.Context) {
+	u := auth.From(c)
 	q := `SELECT w.id,w.caller_no,w.subject,w.detail,w.status,w.priority,w.remark,w.revisit_sample_id,
-		w.created_at,u.user_name FROM wko_ticket w LEFT JOIN sys_user u ON u.id=w.assigned_agent_id`
+		w.created_at,u.user_name FROM wko_ticket w JOIN prj_project p ON p.id=w.project_id LEFT JOIN sys_user u ON u.id=w.assigned_agent_id`
 	args := []interface{}{}
+	where := ""
+	if !auth.HasRoleP(u, "domainAdmin") {
+		where = ` WHERE p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
 	if st := c.Query("status"); st != "" {
-		q += ` WHERE w.status=?`
+		if where == "" {
+			where = ` WHERE w.status=?`
+		} else {
+			where += ` AND w.status=?`
+		}
 		args = append(args, st)
 	}
+	q += where
 	q += ` ORDER BY w.id DESC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
@@ -61,13 +72,20 @@ func (s *Service) List(c *gin.Context) {
 }
 
 func (s *Service) Detail(c *gin.Context) {
+	u := auth.From(c)
 	tid, _ := strconv.ParseInt(c.Param("tid"), 10, 64)
 	var callerNo, subject, detail, status, priority, created string
 	var remark sql.NullString
 	var revisit *int64
 	var agent *string
-	if err := s.db.QueryRow(`SELECT w.caller_no,w.subject,w.detail,w.status,w.priority,w.remark,w.revisit_sample_id,w.created_at,u.user_name
-		FROM wko_ticket w LEFT JOIN sys_user u ON u.id=w.assigned_agent_id WHERE w.id=?`, tid).
+	q := `SELECT w.caller_no,w.subject,w.detail,w.status,w.priority,w.remark,w.revisit_sample_id,w.created_at,u.user_name
+		FROM wko_ticket w JOIN prj_project p ON p.id=w.project_id LEFT JOIN sys_user u ON u.id=w.assigned_agent_id WHERE w.id=?`
+	args := []interface{}{tid}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` AND p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	if err := s.db.QueryRow(q, args...).
 		Scan(&callerNo, &subject, &detail, &status, &priority, &remark, &revisit, &created, &agent); err != nil {
 		rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在")
 		return
@@ -104,7 +122,13 @@ func (s *Service) Accept(c *gin.Context) {
 	tid, _ := strconv.ParseInt(c.Param("tid"), 10, 64)
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var status string
-		if err := tx.QueryRow(`SELECT status FROM wko_ticket WHERE id=?`, tid).Scan(&status); err != nil {
+		q := `SELECT w.status FROM wko_ticket w JOIN prj_project p ON p.id=w.project_id WHERE w.id=?`
+		args := []interface{}{tid}
+		if !auth.HasRoleP(u, "domainAdmin") {
+			q += ` AND p.tenant_id=?`
+			args = append(args, u.TenantID)
+		}
+		if err := tx.QueryRow(q, args...).Scan(&status); err != nil {
 			rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在")
 			return errAbortW
 		}
@@ -148,7 +172,13 @@ func (s *Service) advance(c *gin.Context, target string) {
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var status string
 		var revisit *int64
-		if err := tx.QueryRow(`SELECT status,revisit_sample_id FROM wko_ticket WHERE id=?`, tid).Scan(&status, &revisit); err != nil {
+		q := `SELECT w.status,w.revisit_sample_id FROM wko_ticket w JOIN prj_project p ON p.id=w.project_id WHERE w.id=?`
+		args := []interface{}{tid}
+		if !auth.HasRoleP(u, "domainAdmin") {
+			q += ` AND p.tenant_id=?`
+			args = append(args, u.TenantID)
+		}
+		if err := tx.QueryRow(q, args...).Scan(&status, &revisit); err != nil {
 			rinfo.GinFail(c, rinfo.CodeNotFound, "工单不存在")
 			return errAbortW
 		}

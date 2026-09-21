@@ -93,14 +93,26 @@ func (s *Service) ForceCheckout(c *gin.Context) {
 	rinfo.GinOK(c, gin.H{"sessions": killed, "releasedSamples": released}, "已强签 "+agentNo)
 }
 
-// BuildWall 墙面快照（HTTP 与 WS Hub 共用）
-func (s *Service) BuildWall() map[string]interface{} {
+// BuildWall retains the process-wide snapshot used by the legacy WS hub.
+// REST callers should use BuildWallFor so tenant scope is applied.
+func (s *Service) BuildWall() map[string]interface{} { return s.buildWall(0) }
+
+func (s *Service) BuildWallFor(tenantID int64) map[string]interface{} { return s.buildWall(tenantID) }
+
+// buildWall 墙面快照；tenantID=0 仅供旧的全局 WS hub 使用。
+func (s *Service) buildWall(tenantID int64) map[string]interface{} {
 	agents := []map[string]interface{}{}
 	base := []struct {
 		uid           int64
 		agentNo, name string
 	}{}
-	arows, _ := s.db.Query(`SELECT u.id,u.agent_no,u.user_name FROM sys_user u WHERE u.agent_no IS NOT NULL AND u.status=1`)
+	agentQuery := `SELECT u.id,u.agent_no,u.user_name FROM sys_user u WHERE u.agent_no IS NOT NULL AND u.status=1`
+	agentArgs := []interface{}{}
+	if tenantID > 0 {
+		agentQuery += ` AND u.tenant_id=?`
+		agentArgs = append(agentArgs, tenantID)
+	}
+	arows, _ := s.db.Query(agentQuery, agentArgs...)
 	for arows != nil && arows.Next() {
 		var b struct {
 			uid           int64
@@ -140,21 +152,41 @@ func (s *Service) BuildWall() map[string]interface{} {
 	}
 	today := store.NowISO()[:10]
 	var dial, conn, succ int
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE substr(begin_time,1,10)=?`, today).Scan(&dial)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE connect_time IS NOT NULL`).Scan(&conn)
-	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE result_code='SUCCESS'`).Scan(&succ)
+	callScope := ""
+	callArgs := []interface{}{}
+	if tenantID > 0 {
+		callScope = ` AND project_id IN (SELECT id FROM prj_project WHERE tenant_id=?)`
+		callArgs = append(callArgs, tenantID)
+	}
+	argsDial := append([]interface{}{today}, callArgs...)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE substr(begin_time,1,10)=?`+callScope, argsDial...).Scan(&dial)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE connect_time IS NOT NULL`+callScope, callArgs...).Scan(&conn)
+	_ = s.db.QueryRow(`SELECT COUNT(*) FROM cti_call_record WHERE result_code='SUCCESS'`+callScope, callArgs...).Scan(&succ)
 	return map[string]interface{}{"agents": agents, "summary": gin.H{
 		"dialCount": dial, "connectCount": conn, "successCount": succ, "abandonCount": 0}}
 }
 
 func (s *Service) Wall(c *gin.Context) {
-	rinfo.GinOK(c, s.BuildWall(), "ok")
+	u := auth.From(c)
+	tenantID := int64(0)
+	if !auth.HasRoleP(u, "domainAdmin") {
+		tenantID = u.TenantID
+	}
+	rinfo.GinOK(c, s.BuildWallFor(tenantID), "ok")
 }
 
 func (s *Service) Calls(c *gin.Context) {
+	u := auth.From(c)
 	limit := c.DefaultQuery("limit", "12")
-	rows, err := s.db.Query(`SELECT c.id,c.sample_id,s.cust_name,c.agent_no,c.status,c.result_code,c.begin_time,c.connect_time,COALESCE(c.record_file,'')
-		FROM cti_call_record c LEFT JOIN smp_sample s ON s.id=c.sample_id ORDER BY c.id DESC LIMIT ` + limit)
+	q := `SELECT c.id,c.sample_id,s.cust_name,c.agent_no,c.status,c.result_code,c.begin_time,c.connect_time,COALESCE(c.record_file,'')
+		FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id LEFT JOIN smp_sample s ON s.id=c.sample_id`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY c.id DESC LIMIT ` + limit
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
