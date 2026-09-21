@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { rawSession } from '../api'
 import { Card, Button, Descriptions, Tag, Radio, InputNumber, Input, Select, App, Space, Alert, Typography, Empty, Spin } from 'antd'
 import { PhoneOutlined, CheckCircleOutlined } from '@ant-design/icons'
-import { api } from '../api'
+import { api, rawSession } from '../api'
 
 // 与 Go 后端种子一致的 10 个结果码（出处：001_init.sql + demo 行为基线）
 const RESULT_CODES = [
@@ -36,14 +35,29 @@ export default function Agent() {
   const [resultCode, setResultCode] = useState<string>('SUCCESS')
   const [lastResult, setLastResult] = useState<Record<string, unknown> | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [agentState, setAgentState] = useState<'READY' | 'BUSY' | 'PAUSE'>('READY')
 
   useEffect(() => {
     const s = rawSession(); if (!s) return
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/api/agent/ws?token=${encodeURIComponent(s.sessionId)}`)
-    ws.onmessage = (ev) => { try { const f = JSON.parse(ev.data as string) as { type: string; text?: string }; if (f.type === 'message') setNotice(f.text ?? '') } catch { /* ignore */ } }
-    return () => ws.close()
+    let closed = false
+    let retry: ReturnType<typeof setTimeout> | null = null
+    let ws: WebSocket | null = null
+    const connect = () => {
+      if (closed) return
+      ws = new WebSocket(`${proto}://${location.host}/api/agent/ws?token=${encodeURIComponent(s.sessionId)}`)
+      ws.onmessage = (ev) => { try { const f = JSON.parse(ev.data as string) as { type: string; text?: string }; if (f.type === 'message') setNotice(f.text ?? '') } catch { /* ignore */ } }
+      ws.onclose = () => { if (!closed) retry = setTimeout(connect, 5000) }
+    }
+    connect()
+    return () => { closed = true; if (retry) clearTimeout(retry); ws?.close() }
   }, [])
+
+  const changeState = async (state: 'READY' | 'BUSY' | 'PAUSE') => {
+    const r = await api.post('/api/agent/state', { state })
+    if (!r.success) { message.error(r.message); return }
+    setAgentState(state); message.success(`坐席状态：${state}`)
+  }
 
   const dispatch = async () => {
     setLoading(true)
@@ -97,6 +111,14 @@ export default function Agent() {
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       {notice && <Alert message="督导消息" description={notice} type="info" closable onClose={() => setNotice(null)} style={{ width: '100%' }} />}
+      <Card size="small" title="坐席状态">
+        <Space>
+          <Tag color={agentState === 'READY' ? 'green' : agentState === 'BUSY' ? 'orange' : 'default'}>{agentState}</Tag>
+          <Button size="small" type={agentState === 'READY' ? 'primary' : 'default'} onClick={() => changeState('READY')} disabled={!!disp}>示闲</Button>
+          <Button size="small" onClick={() => changeState('BUSY')} disabled={!!disp}>示忙</Button>
+          <Button size="small" onClick={() => changeState('PAUSE')} disabled={!!disp}>小休</Button>
+        </Space>
+      </Card>
       <Card
         title={<span><PhoneOutlined /> 坐席工作台（外呼作答）</span>}
         extra={

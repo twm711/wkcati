@@ -162,3 +162,5 @@
 | POST | `/api/monitor/force-state` | 督导强制设置坐席状态 |
 
 | GET | `/api/agent/ws?token=` | 坐席定向督导消息 WebSocket |
+
+> Agent 工作台已接入坐席状态按钮及督导消息 WS 断线重连；消息通道仍不持久化历史消息。

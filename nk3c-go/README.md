@@ -46,7 +46,7 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 - 新增 `/api/agent/ws?token=` 定向 WebSocket 消息通道。
 - 督导通过 `POST /api/monitor/control` 的 `MESSAGE` 动作向指定坐席推送消息。
-- 坐席工作台显示督导消息提醒；消息不广播给其它坐席。
+- 坐席工作台显示督导消息提醒；消息不广播给其它坐席，断线后 5 秒自动重连。
 - 能力矩阵中的 `MESSAGE` 已接通。
 
 ## 坐席状态控制（M3-17）
@@ -108,3 +108,8 @@ cd web && pnpm install && pnpm dev   # :5173，/api 反代 :8080
 
 五页骨架（登录/坐席工作台/监控墙+审核/项目管理/工单/IVR 模拟器）详见 `web/README.md`。
 2GB 沙箱内 `vite build` 会 OOM（antd 3100 模块），验证口径 = `tsc --noEmit` + dev 代理链 E2E；生产构建需 ≥4GB 环境。
+
+## 坐席状态前端控制（M3-20）
+
+- Agent 工作台新增 READY/BUSY/PAUSE 状态控制。
+- 话务进行中禁止前端直接切换状态，服务端仍会拦截有进行中样本的强制示闲。
