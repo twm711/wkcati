@@ -174,6 +174,39 @@ func TestMySQLLeaseReapAndAcquireRace(t *testing.T) {
 	}
 }
 
+// TestMySQLSampleClaimConcurrentUpdate 验证多实例领取同一 IDLE 样本时只有一个原子状态更新成功。
+func TestMySQLSampleClaimConcurrentUpdate(t *testing.T) {
+	db := mysqlTestDB(t)
+	defer db.Close()
+	const sampleID = 998008
+	_, _ = db.Exec(`DELETE FROM smp_sample WHERE id=?`, sampleID)
+	if _, err := db.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,status) VALUES(?,?,?,?)`, sampleID, 1, "mysql-claim", "IDLE"); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DELETE FROM smp_sample WHERE id=?`, sampleID)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	successes := 0
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := db.Exec(`UPDATE smp_sample SET status='LEASED' WHERE id=? AND status='IDLE'`, sampleID)
+			if err == nil {
+				if n, _ := res.RowsAffected(); n == 1 {
+					mu.Lock()
+					successes++
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if successes != 1 {
+		t.Fatalf("expected one sample claim, got %d", successes)
+	}
+}
+
 func TestMySQLHalfOpenProbeConcurrentUpdate(t *testing.T) {
 	db := mysqlTestDB(t)
 	defer db.Close()
