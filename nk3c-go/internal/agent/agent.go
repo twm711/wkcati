@@ -886,3 +886,98 @@ func (s *Service) triggerWaitingTasks() {
 		_, _ = s.ProcessWaitingTasks()
 	}
 }
+
+// PreviewTask 预览模式锁定一个样本，不立即发起话务。
+func (s *Service) PreviewTask(c *gin.Context) {
+	u := auth.From(c)
+	projectID := c.DefaultQuery("projectId", "1")
+	var data map[string]interface{}
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		var mode string
+		if err := tx.QueryRow(`SELECT mode FROM cti_dial_strategy WHERE project_id=? AND enabled=1`, projectID).Scan(&mode); err != nil || mode != "PREVIEW" {
+			rinfo.GinFail(c, rinfo.CodeState, "项目未启用预览拨号")
+			return errAbort
+		}
+		var sid int64
+		var name, phone string
+		now := store.NowFor(s.db.Driver)
+		if err := tx.QueryRow(`SELECT s.id,s.cust_name,p.phone_no FROM smp_sample s JOIN smp_phone p ON p.sample_id=s.id AND p.valid_flag=1 WHERE s.project_id=? AND s.status='IDLE' AND (s.next_attempt_at IS NULL OR s.next_attempt_at<=?) ORDER BY s.shuffle_key LIMIT 1`, projectID, now).Scan(&sid, &name, &phone); err != nil {
+			rinfo.GinOK(c, nil, "暂无可预览样本")
+			return errAbort
+		}
+		res, err := tx.Exec(`UPDATE smp_sample SET status='PREVIEW',owner_agent_id=? WHERE id=? AND status='IDLE'`, u.ID, sid)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n != 1 {
+			return errAbort
+		}
+		var qid int64
+		_ = tx.QueryRow(`SELECT queue_id FROM prj_queue WHERE project_id=?`, projectID).Scan(&qid)
+		var pid int64
+		_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_sample_task`).Scan(&pid)
+		if _, err = tx.Exec(`INSERT INTO cti_sample_task(id,project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,?,NULL,?,?, 'PREVIEW',?,?)`, pid, projectID, sid, qid, u.ID, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(30*time.Second))); err != nil {
+			return err
+		}
+		data = map[string]interface{}{"taskId": pid, "sampleId": sid, "custName": name, "phone": phone, "previewSeconds": 30}
+		rinfo.GinOK(c, data, "预览样本已锁定")
+		return errAbort
+	})
+	_ = err
+}
+
+// ConfirmPreview 将预览样本转为普通 LEASED 话务。
+func (s *Service) ConfirmPreview(c *gin.Context) {
+	u := auth.From(c)
+	tid, _ := strconv.ParseInt(c.Param("taskId"), 10, 64)
+	var out map[string]interface{}
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		var pid, sid, qid int64
+		var phone string
+		var status string
+		if err := tx.QueryRow(`SELECT project_id,sample_id,COALESCE(queue_id,0),status FROM cti_sample_task WHERE id=? AND assigned_user_id=?`, tid, u.ID).Scan(&pid, &sid, &qid, &status); err != nil || status != "PREVIEW" {
+			rinfo.GinFail(c, rinfo.CodeNotFound, "预览任务不存在或已失效")
+			return errAbort
+		}
+		if err := tx.QueryRow(`SELECT phone_no FROM smp_phone WHERE sample_id=? AND valid_flag=1 ORDER BY sort_no LIMIT 1`, sid).Scan(&phone); err != nil {
+			return err
+		}
+		now := store.NowFor(s.db.Driver)
+		var no string
+		_ = tx.QueryRow(`SELECT agent_no FROM sys_user WHERE id=?`, u.ID).Scan(&no)
+		ins, err := tx.Exec(`INSERT INTO cti_call_record(project_id,sample_id,agent_id,agent_no,caller_no,called_no,status,begin_time) VALUES(?,?,?,?,?,?,'DIALING',?)`, pid, sid, u.ID, no, "95533", phone, now)
+		if err != nil {
+			return err
+		}
+		cid, _ := ins.LastInsertId()
+		if _, err = tx.Exec(`UPDATE cti_sample_task SET call_id=?,status='LEASED',leased_at=?,lease_until=? WHERE id=? AND status='PREVIEW'`, cid, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(5*time.Minute)), tid); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`UPDATE smp_sample SET status='ASSIGNED' WHERE id=? AND status='PREVIEW'`, sid); err != nil {
+			return err
+		}
+		out = map[string]interface{}{"taskId": tid, "sampleId": sid, "callId": cid}
+		rinfo.GinOK(c, out, "预览已确认，话务已建立")
+		return errAbort
+	})
+	_ = err
+}
+
+func (s *Service) SkipPreview(c *gin.Context) {
+	u := auth.From(c)
+	tid, _ := strconv.ParseInt(c.Param("taskId"), 10, 64)
+	res, err := s.db.Exec(`UPDATE cti_sample_task SET status='SKIPPED',completed_at=? WHERE id=? AND assigned_user_id=? AND status='PREVIEW'`, store.NowFor(s.db.Driver), tid, u.ID)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "预览任务不存在或已失效")
+		return
+	}
+	var sampleID int64
+	_ = s.db.QueryRow(`SELECT sample_id FROM cti_sample_task WHERE id=?`, tid).Scan(&sampleID)
+	_, _ = s.db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status='PREVIEW'`, sampleID)
+	rinfo.GinOK(c, nil, "已跳过预览样本")
+}
