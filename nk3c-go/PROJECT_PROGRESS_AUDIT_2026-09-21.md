@@ -241,3 +241,5 @@ PREDICTIVE MySQL Claim 集成测试进一步将历史话务改为 10 条 SUCCESS
 PREDICTIVE MySQL Claim 集成测试增加极端场景：10 条 SUCCESS、10 条 BREAKOFF，平均通话时长约 1000 秒，初始 current_multiplier=0.5，验证高呼损/长通话共同作用后最终倍率仍被 `predict.multiplier.min=0.50` 保护，不会低于下界；真实 DSN 未配置，仍待外部执行。
 
 PREDICTIVE Claim 集成测试增加可配置倍率上限场景：将测试参数 `predict.multiplier.max` 临时设为 0.60、历史接通率 100%，验证 EWMA 结果被上限裁剪为约 0.60；这证明上限保护机制，但不是默认 3.00 上限的真实 MySQL 执行结果，测试环境仍无 DSN。
+
+PREDICTIVE Claim 集成测试增加长接通等待样本：20 条 SUCCESS 的 connect_time 相对 begin_time 约 58 秒，超过 `predict.avg.connect.seconds=20`，结合低呼损增益后经 0.30 EWMA 断言 `current_multiplier≈0.964`；真实 MySQL DSN 未配置，仍待外部执行。
