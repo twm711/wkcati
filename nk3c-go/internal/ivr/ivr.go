@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"nk3c/internal/auth"
 	"nk3c/internal/store"
 	"nk3c/internal/workorder"
 	"nk3c/pkg/rinfo"
@@ -20,6 +21,19 @@ type Service struct {
 }
 
 func New(db *store.DB, wk *workorder.Service) *Service { return &Service{db: db, wk: wk} }
+
+func (s *Service) allowProject(c *gin.Context, projectID int64) bool {
+	u := auth.From(c)
+	if auth.HasRoleP(u, "domainAdmin") {
+		return true
+	}
+	var tenantID int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, projectID).Scan(&tenantID); err != nil || tenantID != u.TenantID {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
+		return false
+	}
+	return true
+}
 
 type node struct {
 	ID       string            `json:"id"`
@@ -75,6 +89,9 @@ func (s *Service) GetFlow(c *gin.Context) {
 		if n, err := strconv.ParseInt(rawID, 10, 64); err == nil && n > 0 {
 			projectID = n
 		}
+	}
+	if !s.allowProject(c, projectID) {
+		return
 	}
 	var name, raw, updated string
 	if err := s.db.QueryRow(`SELECT name,flow_json,updated_at FROM ivr_flow WHERE project_id=? ORDER BY id LIMIT 1`, projectID).Scan(&name, &raw, &updated); err != nil {
@@ -175,6 +192,9 @@ func (s *Service) PutRoutes(c *gin.Context) {
 			return
 		}
 		seen[r.Prefix] = true
+		if !s.allowProject(c, r.ProjectID) {
+			return
+		}
 		var one int
 		if err := s.db.QueryRow(`SELECT 1 FROM prj_project WHERE id=?`, r.ProjectID).Scan(&one); err != nil {
 			rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
@@ -211,6 +231,9 @@ func (s *Service) PutFlow(c *gin.Context) {
 	f := flow{Entry: req.Flow.Entry, Nodes: req.Flow.Nodes}
 	if req.ProjectID == 0 {
 		req.ProjectID = 1
+	}
+	if !s.allowProject(c, req.ProjectID) {
+		return
 	}
 	if msg := validate(f); msg != "" {
 		rinfo.GinFail(c, rinfo.CodeParam, "流程校验失败："+msg)
@@ -271,8 +294,8 @@ func (s *Service) finalize(sess *session) {
 	end := store.NowISO()
 	path, _ := json.Marshal(sess.Path)
 	ans, _ := json.Marshal(sess.Answers)
-	_, err := s.db.Exec(`INSERT INTO ivr_call_log(caller_no,start_time,end_time,outcome,path_json,answers_json) VALUES(?,?,?,?,?,?)`,
-		sess.CallerNo, sess.Start, end, sess.Outcome, string(path), string(ans))
+	_, err := s.db.Exec(`INSERT INTO ivr_call_log(caller_no,start_time,end_time,outcome,path_json,answers_json,project_id) VALUES(?,?,?,?,?,?,?)`,
+		sess.CallerNo, sess.Start, end, sess.Outcome, string(path), string(ans), sess.ProjectID)
 	if err != nil {
 		return
 	}
@@ -289,6 +312,12 @@ func (s *Service) StartCall(c *gin.Context) {
 		ProjectID int64  `json:"projectId"`
 	}
 	_ = c.ShouldBindJSON(&body)
+	if body.ProjectID == 0 {
+		body.ProjectID = 1
+	}
+	if !s.allowProject(c, body.ProjectID) {
+		return
+	}
 	sid, cur, sess, err := s.startCore(body.CallerNo, body.ProjectID)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
@@ -354,8 +383,16 @@ func (s *Service) Hangup(c *gin.Context) {
 }
 
 func (s *Service) Logs(c *gin.Context) {
-	rows, err := s.db.Query(`SELECT id,caller_no,start_time,end_time,outcome,path_json,answers_json,COALESCE(record_file,'')
-		FROM ivr_call_log ORDER BY id DESC LIMIT 20`)
+	u := auth.From(c)
+	q := `SELECT l.id,l.caller_no,l.start_time,l.end_time,l.outcome,l.path_json,l.answers_json,COALESCE(l.record_file,'')
+		FROM ivr_call_log l JOIN prj_project p ON p.id=l.project_id`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY l.id DESC LIMIT 20`
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return

@@ -116,9 +116,9 @@
 
 本轮新增 SQLite 007 / MySQL 009：`sys_user.tenant_id`、`prj_project.tenant_id`，登录用户携带 TenantID，项目列表、详情、创建和项目变更接口已增加首层租户边界；domainAdmin 保留跨租户能力。进一步将项目租户校验传播到派样、项目导出、录音回放、工单 REST、监控墙 REST 和话务流水（非 domainAdmin 不再通过项目/话务 ID 访问其他租户）。
 
-本轮又将监控墙 WS 改为按连接绑定 tenantID，墙面快照通过 `BuildWallFor(tenantID)` 生成，不再向普通租户推送全局坐席和话务统计。
+本轮又将监控墙 WS 改为按连接绑定 tenantID，墙面快照通过 `BuildWallFor(tenantID)` 生成，不再向普通租户推送全局坐席和话务统计；IVR flow、主叫路由、模拟呼入和 IVR 日志已增加项目租户校验，`ivr_call_log` 新增 project_id。
 
-仍未完成：答卷、IVR 路由、IVR 流程、审计的全链路域过滤；呼入录音日志目前只有 domainAdmin 可走无项目归属的兼容回退；org/group 数据域也没有建模。当前仍不能上线多租户生产。
+仍未完成：组织/分组数据域、历史 IVR 日志归属校验、全链路跨租户自动化测试；org/group 数据域也没有建模。当前仍不能上线多租户生产。
 
 ### P0-5：认证与敏感数据安全不足
 
