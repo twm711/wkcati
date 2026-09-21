@@ -53,6 +53,16 @@ export default function Agent() {
     return () => { closed = true; if (retry) clearTimeout(retry); ws?.close() }
   }, [])
 
+  useEffect(() => {
+    if (!disp) return
+    const renew = async () => {
+      const r = await api.post('/api/agent/task/renew', { callId: disp.callId })
+      if (!r.success) message.warning(`任务租约续期失败：${r.message}`)
+    }
+    const timer = window.setInterval(renew, 120000)
+    return () => window.clearInterval(timer)
+  }, [disp, message])
+
   const changeState = async (state: 'READY' | 'BUSY' | 'PAUSE') => {
     const r = await api.post('/api/agent/state', { state })
     if (!r.success) { message.error(r.message); return }
