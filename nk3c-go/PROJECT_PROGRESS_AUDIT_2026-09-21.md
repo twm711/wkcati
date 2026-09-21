@@ -217,3 +217,5 @@
 新增可选 MySQL 集成测试 `internal/store/mysql_integration_test.go` 和脚本 `scripts/mysql-integration-test.sh`：设置 `NK3C_MYSQL_DSN` 后执行真实迁移及关键字段查询；当前沙箱因未设置 DSN 仅显示 SKIP，未宣称真实 MySQL 已验证。
 
 扩展可选 MySQL 集成测试：`TestMySQLLineRateBucketConcurrentUpdate` 通过 16 个 goroutine/数据库连接竞争同一线路分钟桶，期望原子更新严格成功 2 次；当前无 `NK3C_MYSQL_DSN`，测试仅 SKIP，真实 MySQL 结果待外部环境执行。
+
+扩展 MySQL 集成测试 `TestMySQLHalfOpenProbeConcurrentUpdate`：16 个 MySQL 连接竞争同一条到期 OPEN 线路，期望只有 1 个条件更新成功进入 HALF_OPEN；当前无 DSN，测试仅 SKIP，真实 MySQL 结果待执行。

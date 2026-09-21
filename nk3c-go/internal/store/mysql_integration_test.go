@@ -81,3 +81,37 @@ func TestMySQLLineRateBucketConcurrentUpdate(t *testing.T) {
 		t.Fatalf("expected rate_window_count=2, got %d", count)
 	}
 }
+
+// TestMySQLHalfOpenProbeConcurrentUpdate 验证多个 MySQL 连接只有一个可以领取 HALF_OPEN 探测。
+func TestMySQLHalfOpenProbeConcurrentUpdate(t *testing.T) {
+	db := mysqlTestDB(t)
+	defer db.Close()
+	const id = 998002
+	_, _ = db.Exec(`DELETE FROM cti_outbound_line WHERE id=?`, id)
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,opened_until,rate_limit_per_minute,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, 1, "mysql-test-half", "127.0.0.1", 5060, 1, 1, 10, 0, "OPEN", 5, time.Now().UTC().Add(-time.Minute), 30, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	defer db.Exec(`DELETE FROM cti_outbound_line WHERE id=?`, id)
+	now := NowFor(db.Driver)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	successes := 0
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := db.Exec(`UPDATE cti_outbound_line SET circuit_state='HALF_OPEN' WHERE id=? AND circuit_state='OPEN' AND opened_until<=?`, id, now)
+			if err == nil {
+				if n, _ := res.RowsAffected(); n == 1 {
+					mu.Lock()
+					successes++
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	if successes != 1 {
+		t.Fatalf("expected exactly one HALF_OPEN probe, got %d", successes)
+	}
+}
