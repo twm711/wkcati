@@ -432,13 +432,20 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 			return err
 		}
 		// 线路连续失败触发熔断；成功或非失败结果清零失败连击。
-		var tenantID int64
+		var tenantID, lineID int64
+		var oldState string
 		_ = tx.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, projectID).Scan(&tenantID)
+		_ = tx.QueryRow(`SELECT id,circuit_state FROM cti_outbound_line WHERE tenant_id=? AND line_no=?`, tenantID, callerNo).Scan(&lineID, &oldState)
 		if category == "FAIL" {
 			openedUntil := store.TimeFor(s.db.Driver, time.Now().UTC().Add(5*time.Minute))
 			_, _ = tx.Exec(`UPDATE cti_outbound_line SET failure_streak=failure_streak+1,circuit_state=CASE WHEN failure_streak+1>=5 THEN 'OPEN' ELSE 'CLOSED' END,opened_until=CASE WHEN failure_streak+1>=5 THEN ? ELSE NULL END WHERE tenant_id=? AND line_no=?`, openedUntil, tenantID, callerNo)
 		} else {
 			_, _ = tx.Exec(`UPDATE cti_outbound_line SET failure_streak=0,circuit_state='CLOSED',opened_until=NULL WHERE tenant_id=? AND line_no=?`, tenantID, callerNo)
+		}
+		if lineID > 0 {
+			var newState string
+			_ = tx.QueryRow(`SELECT circuit_state FROM cti_outbound_line WHERE id=?`, lineID).Scan(&newState)
+			recordLineCircuitEvent(tx, lineID, callID, oldState, newState, resultCode, ts)
 		}
 		_, _ = tx.Exec(`UPDATE cti_sample_task SET status='COMPLETED',completed_at=? WHERE call_id=? AND status='LEASED'`, ts, callID)
 		// 保留真实业务结果作为一次尝试原因，便于区分未接、忙线、拒接等结果码。
@@ -485,4 +492,13 @@ func (s *Service) MarkBridgeConnect(callID int64) error {
 		_, err := tx.Exec(`UPDATE smp_sample SET status='INCALL' WHERE id=?`, sampleID)
 		return err
 	})
+}
+
+func recordLineCircuitEvent(tx *sql.Tx, lineID, callID int64, fromState, toState, reason, created string) {
+	if fromState == toState {
+		return
+	}
+	var id int64
+	_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_line_circuit_event`).Scan(&id)
+	_, _ = tx.Exec(`INSERT INTO cti_line_circuit_event(id,line_id,call_id,from_state,to_state,reason,created_at) VALUES(?,?,?,?,?,?,?)`, id, lineID, callID, fromState, toState, reason, created)
 }
