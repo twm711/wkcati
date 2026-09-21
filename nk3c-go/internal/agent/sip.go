@@ -65,7 +65,7 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 		var no, host, state string
 		var port int
 		now := store.NowFor(s.db.Driver)
-		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port,circuit_state FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity AND (circuit_state='CLOSED' OR (circuit_state='OPEN' AND opened_until IS NOT NULL AND opened_until<=?)) ORDER BY priority,id LIMIT 1`, tenant, now).Scan(&id, &no, &host, &port, &state)
+		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port,circuit_state FROM cti_outbound_line l WHERE tenant_id=? AND enabled=1 AND active_calls<capacity AND (circuit_state='CLOSED' OR (circuit_state='OPEN' AND opened_until IS NOT NULL AND opened_until<=?)) AND NOT EXISTS (SELECT 1 FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id WHERE p.tenant_id=l.tenant_id AND c.caller_no=l.line_no AND c.status='CLOSED' AND c.end_time>=? GROUP BY c.caller_no HAVING COUNT(*)>=5 AND SUM(CASE WHEN c.result_code IN ('BREAKOFF','BUSY','NA','REFUSE') THEN 1 ELSE 0 END)*2>=COUNT(*)) ORDER BY priority,id LIMIT 1`, tenant, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(-15*time.Minute))).Scan(&id, &no, &host, &port, &state)
 		if err != nil {
 			return line, err
 		}
