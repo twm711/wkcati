@@ -3,6 +3,8 @@ package monitor
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"nk3c/internal/auth"
@@ -477,6 +479,48 @@ func (s *Service) DialRuntime(c *gin.Context) {
 				abandonRate = float64(abandoned) / float64(totalCalls) * 100
 			}
 			out = append(out, gin.H{"projectId": pid, "mode": mode, "enabled": en == 1, "activeCalls": active, "maxConcurrent": mc, "availableAgents": ready, "headroom": mc - active, "abandonTarget": abandon, "abandonRate": abandonRate, "running": en == 1 && active < mc && ready > 0})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+// LineRuntime 返回最近窗口内的线路级呼损和时长指标。
+func (s *Service) LineRuntime(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
+		return
+	}
+	minutes := 15
+	if v := c.Query("minutes"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 1440 {
+			minutes = n
+		}
+	}
+	cutoff := store.TimeFor(s.db.Driver, time.Now().UTC().Add(-time.Duration(minutes)*time.Minute))
+	q := `SELECT COALESCE(c.caller_no,''),COUNT(*),SUM(CASE WHEN c.result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),SUM(CASE WHEN c.result_code='BREAKOFF' THEN 1 ELSE 0 END),MAX(c.end_time) FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id WHERE c.status='CLOSED' AND c.end_time>=?`
+	args := []interface{}{cutoff}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` AND p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` GROUP BY c.caller_no ORDER BY COUNT(*) DESC`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var line, last string
+		var total, connected, abandoned int64
+		if rows.Scan(&line, &total, &connected, &abandoned, &last) == nil {
+			rate := float64(0)
+			if total > 0 {
+				rate = float64(abandoned) / float64(total) * 100
+			}
+			out = append(out, gin.H{"line": line, "windowMinutes": minutes, "total": total, "connected": connected, "abandoned": abandoned, "abandonRate": rate, "lastCallAt": last})
 		}
 	}
 	rinfo.GinOK(c, out, "ok")
