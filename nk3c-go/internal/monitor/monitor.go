@@ -360,3 +360,88 @@ func (s *Service) LineCircuitEvents(c *gin.Context) {
 	}
 	rinfo.GinOK(c, out, "ok")
 }
+
+type dialStrategyReq struct {
+	ProjectID      int64   `json:"projectId" binding:"required"`
+	Mode           string  `json:"mode"`
+	MaxConcurrent  int     `json:"maxConcurrent"`
+	AbandonTarget  float64 `json:"abandonTarget"`
+	PreviewSeconds int     `json:"previewSeconds"`
+	Enabled        *bool   `json:"enabled"`
+}
+
+func (s *Service) DialStrategies(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
+		return
+	}
+	q := `SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.preview_seconds,d.enabled,d.updated_at FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY d.project_id`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var pid, mc, ps, en int64
+		var mode, updated string
+		var abandon float64
+		if rows.Scan(&pid, &mode, &mc, &abandon, &ps, &en, &updated) == nil {
+			out = append(out, gin.H{"projectId": pid, "mode": mode, "maxConcurrent": mc, "abandonTarget": abandon, "previewSeconds": ps, "enabled": en == 1, "updatedAt": updated})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+func (s *Service) UpsertDialStrategy(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要机构管理员权限")
+		return
+	}
+	var req dialStrategyReq
+	if c.ShouldBindJSON(&req) != nil || req.ProjectID <= 0 {
+		rinfo.GinFail(c, rinfo.CodeParam, "拨号策略参数错误")
+		return
+	}
+	if req.Mode != "PREDICTIVE" && req.Mode != "PROGRESSIVE" && req.Mode != "PREVIEW" {
+		rinfo.GinFail(c, rinfo.CodeParam, "mode 必须为 PREDICTIVE、PROGRESSIVE 或 PREVIEW")
+		return
+	}
+	if req.MaxConcurrent <= 0 {
+		req.MaxConcurrent = 1
+	}
+	if req.AbandonTarget <= 0 {
+		req.AbandonTarget = 3
+	}
+	if req.PreviewSeconds <= 0 {
+		req.PreviewSeconds = 15
+	}
+	en := 1
+	if req.Enabled != nil && !(*req.Enabled) {
+		en = 0
+	}
+	var tenant int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, req.ProjectID).Scan(&tenant); err != nil || (!auth.HasRoleP(u, "domainAdmin") && tenant != u.TenantID) {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
+		return
+	}
+	now := store.NowFor(s.db.Driver)
+	q := `INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,preview_seconds,enabled,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id) DO UPDATE SET mode=excluded.mode,max_concurrent=excluded.max_concurrent,abandon_target=excluded.abandon_target,preview_seconds=excluded.preview_seconds,enabled=excluded.enabled,updated_at=excluded.updated_at`
+	if s.db.Driver == "mysql" {
+		q = `INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,preview_seconds,enabled,updated_at) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE mode=VALUES(mode),max_concurrent=VALUES(max_concurrent),abandon_target=VALUES(abandon_target),preview_seconds=VALUES(preview_seconds),enabled=VALUES(enabled),updated_at=VALUES(updated_at)`
+	}
+	if _, err := s.db.Exec(q, req.ProjectID, req.Mode, req.MaxConcurrent, req.AbandonTarget, req.PreviewSeconds, en, now); err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	rinfo.GinOK(c, gin.H{"projectId": req.ProjectID}, "拨号策略已保存")
+}
