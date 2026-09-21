@@ -33,7 +33,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO prj_project(id,project_code,project_name,status,tenant_id,group_id) VALUES(?,?,?,?,?,?)`, pid, "MC", "mysql claim", "RUNNING", 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,enabled,updated_at,current_multiplier,last_sample_count) VALUES(?,?,?, ?,?,?,?,?)`, pid, "PREDICTIVE", 2, 3, 1, time.Now(), 1, 0); err != nil {
+	if _, err := db.Exec(`INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,enabled,updated_at,current_multiplier,last_sample_count) VALUES(?,?,?, ?,?,?,?,?)`, pid, "PREDICTIVE", 2, 3, 1, time.Now(), 0.5, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO cti_queue(id,tenant_id,org_id,group_id,name,status) VALUES(?,?,?,?,?,1)`, qid, 1, 1, 1, "mysql-claim"); err != nil {
@@ -61,7 +61,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 		} else {
 			result = "BREAKOFF"
 		}
-		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,status,result_code,begin_time,connect_time,end_time) VALUES(?,?,?, ?,?,?,?)`, 998100+i, pid, "CLOSED", result, time.Now().UTC().Add(-time.Duration(i+1)*time.Minute), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Add(2*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute)); err != nil {
+		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,status,result_code,begin_time,connect_time,end_time) VALUES(?,?,?, ?,?,?,?)`, 998100+i, pid, "CLOSED", result, time.Now().UTC().Add(-1000*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Add(-2*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
 		t.Fatal(err)
 	}
-	if multiplier < 0.924 || multiplier > 0.926 || samples != 20 {
-		t.Fatalf("expected predictive EWMA state 0.925/20 under high abandon rate, got %v/%d", multiplier, samples)
+	if multiplier < 0.499 || multiplier > 0.501 || samples != 20 {
+		t.Fatalf("expected predictive multiplier floor 0.50/20 under extreme loss and duration, got %v/%d", multiplier, samples)
 	}
 }

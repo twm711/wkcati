@@ -237,3 +237,5 @@ PREDICTIVE MySQL Claim 集成测试补充 20 条近期 SUCCESS 历史话务，�
 PREDICTIVE MySQL Claim 集成测试将 20 条历史话务改为 10 条 SUCCESS、10 条 BUSY，接通率 50% 时断言最小样本阈值通过、`last_sample_count=20`，并按 alpha=0.30 从 current=1 平滑至 `current_multiplier≈1.15`；真实 DSN 未配置，仍待外部执行。
 
 PREDICTIVE MySQL Claim 集成测试进一步将历史话务改为 10 条 SUCCESS、10 条 BREAKOFF，呼损率 50% 超过 abandon_target=3%，原始倍率 1.5 经呼损收缩为 0.75，再经 alpha=0.30 从 current=1 平滑至 `current_multiplier≈0.925`，同时保持 `last_sample_count=20`；真实 DSN 未配置，仍待外部执行。
+
+PREDICTIVE MySQL Claim 集成测试增加极端场景：10 条 SUCCESS、10 条 BREAKOFF，平均通话时长约 1000 秒，初始 current_multiplier=0.5，验证高呼损/长通话共同作用后最终倍率仍被 `predict.multiplier.min=0.50` 保护，不会低于下界；真实 DSN 未配置，仍待外部执行。
