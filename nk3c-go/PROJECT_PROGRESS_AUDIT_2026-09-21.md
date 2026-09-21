@@ -265,3 +265,5 @@ PREDICTIVE 多轮测试增加第四轮短样本保护：将窗口历史减少到
 实现共享 READY 坐席的全局硬容量保护：Claim 在项目队列 capacity 之外统计该坐席所有队列的 LEASED 任务，并以启用队列最大 capacity 作为坐席全局上限；跨项目已占满时拒绝第二次 Claim。另将 PREDICTIVE current_multiplier/last_sample_count 持久化延后到坐席、线路和样本容量检查通过后，避免被拒绝的 Claim 改写预测状态；多项目共享坐席测试全绿。
 
 继续清理应用层 MAX(id)+1：`UpsertLine` 改为省略 id 让 SQLite/MySQL 自增并读取 LastInsertId；`UpdateLineRate` 审计记录改为省略 id，依赖 `cti_line_rate_audit` 自增主键；线路配置和速率审计不再通过 MAX(id)+1 生成 ID。由于当前环境 Go 工具链缺失，本轮未能重新执行 gofmt/go test，待工具链恢复后必须全量验证。
+
+继续清理应用层 ID：`internal/agent/agent.go` 的等待任务和预览样本任务改为省略 ID 并使用 `LastInsertId()`；`internal/agent/sip.go` 的自动黑名单记录改为数据库自增 ID。SQLite 使用 `ON CONFLICT`，MySQL 使用 `INSERT IGNORE`，均不再传入应用层计算的 ID。Go 工具链仍缺失，本轮未运行 gofmt/go test。

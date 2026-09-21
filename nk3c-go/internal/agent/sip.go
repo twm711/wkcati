@@ -413,9 +413,7 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 				var bl int
 				_ = tx.QueryRow(`SELECT 1 FROM smp_blacklist WHERE phone_no=?`, phone).Scan(&bl)
 				if bl != 1 {
-					var bid int64
-					_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM smp_blacklist`).Scan(&bid)
-					if _, err := tx.Exec(`INSERT INTO smp_blacklist VALUES(?,?,?,?)`, bid, phone, "GLOBAL", "自动-"+resultCode); err != nil {
+					if _, err := tx.Exec(`INSERT INTO smp_blacklist(phone_no,scope,reason) VALUES(?,?,?)`, phone, "GLOBAL", "自动-"+resultCode); err != nil {
 						return err
 					}
 				}

@@ -162,17 +162,16 @@ func (s *Service) Dispatch(c *gin.Context) {
 			_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, u.ID, queueID.Int64).Scan(&capacity)
 			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, u.ID, queueID.Int64).Scan(&active)
 			if capacity > 0 && active >= capacity {
-				var waitID, queuePriority int64
-				_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_waiting_task`).Scan(&waitID)
+				var queuePriority int64
 				_ = tx.QueryRow(`SELECT priority FROM prj_queue WHERE project_id=?`, projectID).Scan(&queuePriority)
 				if queuePriority == 0 {
 					queuePriority = 100
 				}
-				waitSQL := `INSERT INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?) ON CONFLICT(agent_id,project_id,status) DO NOTHING`
+				waitSQL := `INSERT INTO cti_waiting_task(tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?, 'WAITING',?) ON CONFLICT(agent_id,project_id,status) DO NOTHING`
 				if s.db.Driver == "mysql" {
-					waitSQL = `INSERT IGNORE INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?)`
+					waitSQL = `INSERT IGNORE INTO cti_waiting_task(tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?, 'WAITING',?)`
 				}
-				_, _ = tx.Exec(waitSQL, waitID, tenantID, projectID, queueID.Int64, u.ID, queuePriority, store.NowFor(s.db.Driver))
+				_, _ = tx.Exec(waitSQL, tenantID, projectID, queueID.Int64, u.ID, queuePriority, store.NowFor(s.db.Driver))
 				rinfo.GinOK(c, gin.H{"status": "WAITING", "queueId": queueID.Int64, "projectId": projectID}, "已进入等待队列")
 				return errAbort
 			}
@@ -183,18 +182,17 @@ func (s *Service) Dispatch(c *gin.Context) {
 			var projectActive int
 			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE project_id=? AND status='LEASED'`, projectID).Scan(&projectActive)
 			if strategyMax > 0 && projectActive >= strategyMax {
-				var waitID, queuePriority int64
+				var queuePriority int64
 				if queueID.Valid {
-					_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_waiting_task`).Scan(&waitID)
 					_ = tx.QueryRow(`SELECT priority FROM prj_queue WHERE project_id=?`, projectID).Scan(&queuePriority)
 					if queuePriority == 0 {
 						queuePriority = 100
 					}
-					waitSQL := `INSERT INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?) ON CONFLICT(agent_id,project_id,status) DO NOTHING`
+					waitSQL := `INSERT INTO cti_waiting_task(tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?, 'WAITING',?) ON CONFLICT(agent_id,project_id,status) DO NOTHING`
 					if s.db.Driver == "mysql" {
-						waitSQL = `INSERT IGNORE INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?)`
+						waitSQL = `INSERT IGNORE INTO cti_waiting_task(tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?, 'WAITING',?)`
 					}
-					_, _ = tx.Exec(waitSQL, waitID, tenantID, projectID, queueID.Int64, u.ID, queuePriority, store.NowFor(s.db.Driver))
+					_, _ = tx.Exec(waitSQL, tenantID, projectID, queueID.Int64, u.ID, queuePriority, store.NowFor(s.db.Driver))
 				}
 				rinfo.GinOK(c, gin.H{"status": "WAITING", "projectId": projectID, "mode": strategyMode}, "拨号策略并发已满，已进入等待队列")
 				return errAbort
@@ -915,11 +913,10 @@ func (s *Service) PreviewTask(c *gin.Context) {
 		}
 		var qid int64
 		_ = tx.QueryRow(`SELECT queue_id FROM prj_queue WHERE project_id=?`, projectID).Scan(&qid)
-		var pid int64
-		_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_sample_task`).Scan(&pid)
-		if _, err = tx.Exec(`INSERT INTO cti_sample_task(id,project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,?,NULL,?,?, 'PREVIEW',?,?)`, pid, projectID, sid, qid, u.ID, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(30*time.Second))); err != nil {
-			return err
-		}
+		taskRes, err := tx.Exec(`INSERT INTO cti_sample_task(project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,NULL,?,?, 'PREVIEW',?,?)`, projectID, sid, qid, u.ID, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(30*time.Second)))
+		if err != nil { return err }
+		pid, err := taskRes.LastInsertId()
+		if err != nil { return err }
 		data = map[string]interface{}{"taskId": pid, "sampleId": sid, "custName": name, "phone": phone, "previewSeconds": 30}
 		rinfo.GinOK(c, data, "预览样本已锁定")
 		return errAbort
