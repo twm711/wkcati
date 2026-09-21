@@ -110,6 +110,8 @@ func Build(db *store.DB) *App {
 		api.GET("/monitor/wall", mo.Wall)
 		api.GET("/monitor/calls", mo.Calls)
 		api.GET("/monitor/line-health", mo.LineHealth)
+		api.GET("/monitor/lines", mo.Lines)
+		api.POST("/monitor/lines", mo.UpsertLine)
 		api.POST("/monitor/control", mo.Control)
 		api.GET("/monitor/control/capabilities", mo.Capabilities)
 		api.POST("/monitor/force-state", a.RequireRoles("groupAdmin"), mo.ForceState)

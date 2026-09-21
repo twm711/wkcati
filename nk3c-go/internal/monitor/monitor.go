@@ -245,3 +245,87 @@ func (s *Service) LineHealth(c *gin.Context) {
 	}
 	rinfo.GinOK(c, out, "ok")
 }
+
+type outboundLineReq struct {
+	LineNo   string `json:"lineNo" binding:"required"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Priority int    `json:"priority"`
+	Capacity int    `json:"capacity"`
+	Enabled  *bool  `json:"enabled"`
+}
+
+// Lines 返回当前租户外呼线路及容量状态。
+func (s *Service) Lines(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
+		return
+	}
+	q := `SELECT id,line_no,COALESCE(host,''),port,enabled,priority,capacity,active_calls,created_at FROM cti_outbound_line`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY priority,id`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id, port, en, pri, cap, active int64
+		var no, host, created string
+		if rows.Scan(&id, &no, &host, &port, &en, &pri, &cap, &active, &created) == nil {
+			out = append(out, gin.H{"id": id, "lineNo": no, "host": host, "port": port, "enabled": en == 1, "priority": pri, "capacity": cap, "activeCalls": active, "available": cap > active, "createdAt": created})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+// UpsertLine 创建或更新线路配置；实际拨号接线仍由媒体域负责。
+func (s *Service) UpsertLine(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要机构管理员权限")
+		return
+	}
+	var req outboundLineReq
+	if c.ShouldBindJSON(&req) != nil || req.LineNo == "" {
+		rinfo.GinFail(c, rinfo.CodeParam, "线路参数错误")
+		return
+	}
+	if req.Port == 0 {
+		req.Port = 5060
+	}
+	if req.Priority == 0 {
+		req.Priority = 100
+	}
+	if req.Capacity <= 0 {
+		req.Capacity = 10
+	}
+	enabled := 1
+	if req.Enabled != nil && !(*req.Enabled) {
+		enabled = 0
+	}
+	var id int64
+	_ = s.db.QueryRow(`SELECT id FROM cti_outbound_line WHERE tenant_id=? AND line_no=?`, u.TenantID, req.LineNo).Scan(&id)
+	if id == 0 {
+		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_outbound_line`).Scan(&id)
+		_, err := s.db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,created_at) VALUES(?,?,?,?,?,?,?,?,0,?)`, id, u.TenantID, req.LineNo, req.Host, req.Port, enabled, req.Priority, req.Capacity, store.NowFor(s.db.Driver))
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
+	} else {
+		_, err := s.db.Exec(`UPDATE cti_outbound_line SET host=?,port=?,enabled=?,priority=?,capacity=? WHERE id=? AND tenant_id=?`, req.Host, req.Port, enabled, req.Priority, req.Capacity, id, u.TenantID)
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
+	}
+	rinfo.GinOK(c, gin.H{"id": id}, "线路已保存")
+}
