@@ -59,7 +59,8 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 		wait = 6 * time.Second
 	}
 	uri := sip.Uri{User: digitsOnly(task.Phone), Host: o.PeerHost, Port: o.PeerPort}
-	opts := diago.InviteOptions{Transport: "udp"}
+	lastSIPStatus := 0
+	opts := diago.InviteOptions{Transport: "udp", OnResponse: func(res *sip.Response) error { lastSIPStatus = res.StatusCode; return nil }}
 	opts.Headers = append(opts.Headers, &sip.FromHeader{
 		DisplayName: "NK3C 调查中心",
 		Address:     sip.Uri{User: task.CallerID, Host: "nk3c.local"},
@@ -67,9 +68,10 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 	})
 	c, err := o.dg.Invite(ctx, uri, opts)
 	if err != nil {
-		// 未接通 → NA（回池重拨，业务规则统一）
-		slog.Warn("外呼未接通", "call", callID, "phone", task.Phone, "err", err)
-		return o.Finish(callID, "NA")
+		code := classifySIPFailure(lastSIPStatus)
+		// 未接通按 SIP 最终响应映射为统一结果码；无法取得响应时兼容为 NA。
+		slog.Warn("外呼未接通", "call", callID, "phone", task.Phone, "sip_status", lastSIPStatus, "result_code", code, "err", err)
+		return o.Finish(callID, code)
 	}
 	o.register(callID, func(ctx context.Context) error { return c.Hangup(ctx) })
 	defer o.unregister(callID)
@@ -151,6 +153,22 @@ func (o *OutboundCaller) askOne(ctx context.Context, tap *audioTap, callID int64
 // Finish 收尾结果码（桥接业务核心）
 func (o *OutboundCaller) Finish(callID int64, code string) (map[string]interface{}, string, error) {
 	return o.Driver.FinishOutbound(callID, code)
+}
+
+// classifySIPFailure 将 SIP 最终响应映射到业务结果码。
+func classifySIPFailure(status int) string {
+	switch status {
+	case 486, 600:
+		return "BUSY"
+	case 404, 484:
+		return "INVALID"
+	case 603, 607:
+		return "REFUSE"
+	case 408, 480, 487:
+		return "NA"
+	default:
+		return "NA"
+	}
 }
 
 // digitsOnly 号码数字清洗
