@@ -25,11 +25,14 @@ interface Dispatch {
   questionnaire: { questionnaireId: number; title: string; version: string; questions: Q[] }
 }
 interface Answered { [questionId: number]: string }
+interface Preview { taskId: number; sampleId: number; custName: string; phone: string; previewSeconds: number }
 
 export default function Agent() {
   const { message } = App.useApp()
   const [loading, setLoading] = useState(false)
   const [disp, setDisp] = useState<Dispatch | null>(null)
+  const [preview, setPreview] = useState<Preview | null>(null)
+  const [previewLeft, setPreviewLeft] = useState(0)
   const [answered, setAnswered] = useState<Answered>({})
   const [values, setValues] = useState<Record<number, { optionIds?: number[]; numericValue?: number | null; answerText?: string }>>({})
   const [resultCode, setResultCode] = useState<string>('SUCCESS')
@@ -88,6 +91,32 @@ export default function Agent() {
     }
   }
 
+  const getPreview = async () => {
+    setLoading(true)
+    const r = await api.get<Preview>('/api/agent/preview?projectId=1')
+    setLoading(false)
+    if (!r.success || !r.data) { message.warning(r.message); return }
+    setPreview(r.data); setPreviewLeft(r.data.previewSeconds)
+  }
+
+  useEffect(() => {
+    if (!preview) return
+    const timer = window.setInterval(() => setPreviewLeft((v) => {
+      if (v <= 1) { void api.post(`/api/agent/preview/${preview.taskId}/skip`); setPreview(null); message.info('预览已超时并回池'); return 0 }
+      return v - 1
+    }), 1000)
+    return () => window.clearInterval(timer)
+  }, [preview, message])
+
+  const confirmPreview = async () => {
+    if (!preview) return
+    const r = await api.post<{ callId:number; sampleId:number }>(`/api/agent/preview/${preview.taskId}/confirm`)
+    if (!r.success) { message.error(r.message); return }
+    setPreview(null)
+    message.success(`${r.message}，话务 #${r.data.callId} 已建立；请继续使用外呼媒体或刷新工作台获取问卷`)
+  }
+  const skipPreview = async () => { if (!preview) return; const r = await api.post(`/api/agent/preview/${preview.taskId}/skip`); if (r.success) { setPreview(null); message.success(r.message) } else message.error(r.message) }
+
   const submitAnswer = async (q: Q) => {
     const v = values[q.questionId] ?? {}
     try {
@@ -132,12 +161,16 @@ export default function Agent() {
       <Card
         title={<span><PhoneOutlined /> 坐席工作台（外呼作答）</span>}
         extra={
-          <Button type="primary" loading={loading} onClick={dispatch} disabled={!!disp}>
-            {disp ? '话务进行中…' : '① 获取派样（项目 1）'}
-          </Button>
+          <Space>
+            <Button onClick={getPreview} loading={loading} disabled={!!disp || !!preview}>预览样本</Button>
+            <Button type="primary" loading={loading} onClick={dispatch} disabled={!!disp || !!preview}>
+              {disp ? '话务进行中…' : '① 获取派样（项目 1）'}
+            </Button>
+          </Space>
         }
       >
-        {!disp && !lastResult && <Empty description="点击「获取派样」开始外呼（过滤规则：黑名单 / 半年原则 / 重拨上限 / 池空）" />}
+        {!disp && !preview && !lastResult && <Empty description="点击「获取派样」开始外呼，或先锁定预览样本" />}
+        {preview && <Alert type="warning" showIcon message={`预览：${preview.custName} / ${preview.phone}`} description={`剩余 ${previewLeft} 秒；确认后建立话务，跳过则样本回池。`} action={<Space><Button size="small" type="primary" onClick={confirmPreview}>确认拨打</Button><Button size="small" onClick={skipPreview}>跳过</Button></Space>} />}
         {lastResult && (
           <Alert
             type="success"
