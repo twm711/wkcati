@@ -10,6 +10,7 @@ interface CallRow { id: number; sample_id: unknown; cust_name: unknown; agent_no
 interface SheetRow { id: number; call_id: number; project_id: number; sample_id: number; agent_id: number; qnr_id: number; qnr_version: string; status: string; audit_remark: string }
 interface QCEvent { type: 'qc'; event: string; data: Record<string, unknown>; ts: number }
 interface LineRuntime { line: string; windowMinutes: number; total: number; connected: number; abandoned: number; abandonRate: number; lastCallAt: string; rateLimitPerMinute: number; effectiveRatePerMinute: number; failureStreak: number; circuitState: string; recoveryCooldownSeconds: number }
+interface RateAudit { id: number; lineNo: string; operatorId: number; oldRate: number; newRate: number; reason: string; createdAt: string }
 
 const STATE_COLOR: Record<string, string> = { READY: 'default', DIALING: 'processing', TALKING: 'warning' }
 
@@ -18,6 +19,8 @@ export default function Monitor() {
   const [wall, setWall] = useState<Wall | null>(null)
   const [calls, setCalls] = useState<CallRow[]>([])
   const [lineRuntime, setLineRuntime] = useState<LineRuntime[]>([])
+  const [auditLine, setAuditLine] = useState<string | null>(null)
+  const [rateAudits, setRateAudits] = useState<RateAudit[]>([])
   const [sheets, setSheets] = useState<SheetRow[]>([])
   const [auditTarget, setAuditTarget] = useState<{ row: SheetRow; action: 'PASS' | 'REJECT' } | null>(null)
   const [wsLive, setWsLive] = useState(false)
@@ -111,6 +114,11 @@ export default function Monitor() {
       setQcWsLive(false)
     }
   }, [canAudit])
+
+  const showRateAudits = async (lineNo: string) => {
+    const r = await api.get<RateAudit[]>(`/api/monitor/lines/rate-audits?lineNo=${encodeURIComponent(lineNo)}`)
+    if (r.success) { setRateAudits(r.data); setAuditLine(lineNo) } else message.error(r.message)
+  }
 
   const updateLineRate = async (line: LineRuntime, value: number | null) => {
     if (value == null || value < 0 || value > 10000) return
@@ -238,9 +246,16 @@ export default function Monitor() {
             { title: '失败连击', dataIndex: 'failureStreak' },
             { title: '恢复冷却', render: (_, r) => r.recoveryCooldownSeconds > 0 ? `${r.recoveryCooldownSeconds}s` : '-' },
             { title: '样本', render: (_, r) => `${r.total} 通 / ${r.connected} 接通` },
+            ...(canManageLines ? [{ title: '审计', render: (_: unknown, r: LineRuntime) => <Button size="small" onClick={() => showRateAudits(r.line)}>历史</Button> }] : []),
           ]}
         />
       </Card>
+
+      <Modal open={auditLine != null} title={`线路 ${auditLine ?? ''} 的速率调整历史`} footer={null} onCancel={() => setAuditLine(null)}>
+        <Table<RateAudit> rowKey="id" size="small" pagination={{ pageSize: 6 }} dataSource={rateAudits} columns={[
+          { title: '时间', dataIndex: 'createdAt' }, { title: '变化', render: (_, r) => `${r.oldRate} → ${r.newRate}` }, { title: '操作人', dataIndex: 'operatorId' }, { title: '原因', dataIndex: 'reason' },
+        ]} />
+      </Modal>
 
       <Card title="话务流水（最近 12 条）">
         <Table<CallRow>

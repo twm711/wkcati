@@ -380,6 +380,38 @@ func (s *Service) UpdateLineRate(c *gin.Context) {
 	rinfo.GinOK(c, gin.H{"lineNo": req.LineNo, "oldRateLimitPerMinute": oldRate, "rateLimitPerMinute": req.RateLimitPerMinute}, "线路速率已更新")
 }
 
+// LineRateAudits 查询线路基础速率调整审计记录。
+func (s *Service) LineRateAudits(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
+		return
+	}
+	line := c.Query("lineNo")
+	q := `SELECT id,line_no,operator_id,old_rate,new_rate,reason,created_at FROM cti_line_rate_audit WHERE tenant_id=?`
+	args := []interface{}{u.TenantID}
+	if line != "" {
+		q += ` AND line_no=?`
+		args = append(args, line)
+	}
+	q += ` ORDER BY created_at DESC LIMIT 100`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []gin.H{}
+	for rows.Next() {
+		var id, operator, oldRate, newRate int64
+		var no, reason, created string
+		if rows.Scan(&id, &no, &operator, &oldRate, &newRate, &reason, &created) == nil {
+			out = append(out, gin.H{"id": id, "lineNo": no, "operatorId": operator, "oldRate": oldRate, "newRate": newRate, "reason": reason, "createdAt": created})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
 // LineCircuitEvents 查询线路熔断状态变化时间线。
 func (s *Service) LineCircuitEvents(c *gin.Context) {
 	u := auth.From(c)

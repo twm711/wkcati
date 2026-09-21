@@ -123,6 +123,7 @@ func Build(db *store.DB) *App {
 		api.GET("/monitor/dial-runtime", mo.DialRuntime)
 		api.POST("/monitor/lines", mo.UpsertLine)
 		api.POST("/monitor/lines/rate", mo.UpdateLineRate)
+		api.GET("/monitor/lines/rate-audits", mo.LineRateAudits)
 		api.POST("/monitor/control", mo.Control)
 		api.GET("/monitor/control/capabilities", mo.Capabilities)
 		api.POST("/monitor/force-state", a.RequireRoles("groupAdmin"), mo.ForceState)
