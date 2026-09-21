@@ -102,9 +102,11 @@
 
 `mysql/004_seed.sql` 只插入用户和参数，SQLite 的项目、问卷、样本、状态码、IVR flow 等演示数据没有对应 MySQL seed。新鲜 MySQL 即使迁移成功也没有可运行项目和状态码。
 
-### P0-2：MySQL 主键/ID 生成不闭环
+### P0-2：MySQL 主键/ID 生成不闭环（已开始修复，未完成验证）
 
-MySQL 表的多数 `id` 没有 AUTO_INCREMENT，代码却大量省略 id 并调用 `LastInsertId()`；例如派样插入 `cti_call_record`、答卷 `ans_sheet`、QC 事件 `cti_monitor_event`。这会导致新库插入失败或得到 0 ID。应用层 Snowflake 也没有在这些写入路径接入。
+原 MySQL 表的多数 `id` 没有 AUTO_INCREMENT，代码却大量省略 id 并调用 `LastInsertId()`；例如派样插入 `cti_call_record`、答卷 `ans_sheet`、QC 事件 `cti_monitor_event`。这会导致新库插入失败或得到 0 ID。
+
+本轮已将新鲜安装的 `001_init.sql` 主键改为 `AUTO_INCREMENT`，并新增 `008_production_integrity.sql` 尝试修复旧库和补齐状态码；但真实 MySQL 实例尚未执行，不能标记为完成。应用层 Snowflake 仍没有在这些写入路径接入。
 
 ### P0-3：MySQL 字段长度不适合真实数据
 

@@ -85,7 +85,7 @@ bash ../autotest/sip_drill.sh   # gophone 真机演练 6 断言（需 gophone �
 
 - web 新增 `/exports` 导出中心：项目/格式选择、列选择、CSV/XLSX/SAV 下载，浏览器本地保留最近 20 条导出历史。
 - `GET /api/export/:pid/columns` 返回可选列；导出支持 `?cols=0,1,...`。XLSX 结果码分布在裁剪列后仍正确。
-- 新增 `migrations/mysql/001_init.sql`、`002_qc.sql`、`003_cti_extensions.sql`、`004_seed.sql`（MySQL 8.0、InnoDB、utf8mb4）；`--driver mysql` 已按 driver 选择迁移目录，答题 upsert 对 SQLite 使用 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。真实 MySQL 连接/压测仍需专用实例。
+- 新增 `migrations/mysql/001_init.sql`、`002_qc.sql`、`003_cti_extensions.sql`、`004_seed.sql`、`008_production_integrity.sql`（MySQL 8.0、InnoDB、utf8mb4）；001/008 已开始补齐 AUTO_INCREMENT、文本字段和结果码基础数据。`--driver mysql` 已按 driver 选择迁移目录，答题 upsert 对 SQLite 使用 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。真实 MySQL 连接、迁移、接口集成和并发验证仍未完成。
 
 ## CTI 扩展列迁移（M3 第三增量）
 
