@@ -209,3 +209,39 @@ func (s *Service) Calls(c *gin.Context) {
 	}
 	rinfo.GinOK(c, out, "ok")
 }
+
+// LineHealth 汇总主叫线路的接通率、失败率和最近结果，供线路降级决策使用。
+func (s *Service) LineHealth(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要督导及以上权限")
+		return
+	}
+	q := `SELECT COALESCE(c.caller_no,''),COUNT(*),SUM(CASE WHEN c.status='CLOSED' AND c.result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),SUM(CASE WHEN c.status='CLOSED' AND c.result_code IN ('BUSY','NA','REFUSE','INVALID','BREAKOFF') THEN 1 ELSE 0 END),MAX(c.end_time) FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` GROUP BY c.caller_no ORDER BY COUNT(*) DESC`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var line string
+		var total, connected, failed int64
+		var last string
+		if rows.Scan(&line, &total, &connected, &failed, &last) == nil {
+			rate := float64(0)
+			if total > 0 {
+				rate = float64(failed) / float64(total)
+			}
+			out = append(out, gin.H{"line": line, "total": total, "connected": connected, "failed": failed, "failureRate": rate, "lastCallAt": last, "degraded": rate >= 0.5 && total >= 10})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}

@@ -164,4 +164,5 @@
 - 修正 `internal/monitor/capabilities.go`：`LISTEN` 不再错误返回 false。
 - 修正 README 对 `MESSAGE/FORCE_BUSY/FORCE_READY` 的过期描述。
 - `go test ./...`：全部通过。
+- 新增 `/api/monitor/line-health`：按租户汇总主叫线路总呼叫、接通、失败、失败率和最近话务时间；样本量至少 10 且失败率不低于 50% 时标记 `degraded`。
 - `web/node_modules` 不存在，`npx tsc --noEmit` 尚未执行。
