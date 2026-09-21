@@ -462,7 +462,7 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 		return store.ErrAbort
 	})
 	if errors.Is(err, store.ErrAbort) {
-		_, _ = s.ProcessWaitingTasks()
+		s.triggerWaitingTasks()
 		return outData, outMsg, nil
 	}
 	if err != nil {
@@ -472,7 +472,7 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 		}
 		return nil, "", err
 	}
-	_, _ = s.ProcessWaitingTasks()
+	s.triggerWaitingTasks()
 	return outData, outMsg, nil
 }
 

@@ -167,7 +167,7 @@
 - 新增 `TestHalfOpenLineAllowsSingleProbe`，使用两个并发服务实例验证 OPEN 到期时仅一个请求能成功取得 HALF_OPEN 探测线路；SQLite 重复运行 5 次通过。
 - 派样实际读取 `cti_agent_queue.capacity`，统计该坐席在目标队列的 `LEASED` 任务占用，达到容量时拒绝继续派样；
 - 未传 `projectId` 时，派样会在当前租户/坐席组可用项目中按队列 priority、项目队列 priority、项目 ID 自动选择最高优先级项目；显式传入 `projectId` 仍保持兼容；
-- 新增 `cti_waiting_task` 等待队列表；坐席队列容量已满时不再直接丢弃请求，而是幂等进入 WAITING；容量释放后后台每 30 秒自动为等待任务选择样本、创建话务和 LEASED 任务，并标记 ASSIGNED；结果提交后同步触发一次等待队列调度；等待调度使用独立 worker lock，避免与租约回收互相阻塞；新增等待任务查询和取消接口及 React 等待队列页面；`go test ./...`、`npx tsc --noEmit` 全部通过。
+- 新增 `cti_waiting_task` 等待队列表；坐席队列容量已满时不再直接丢弃请求，而是幂等进入 WAITING；容量释放后后台每 30 秒自动为等待任务选择样本、创建话务和 LEASED 任务，并标记 ASSIGNED；结果提交后仅在存在 WAITING 项时同步触发一次调度；等待调度使用独立 worker lock，避免与租约回收互相阻塞；新增等待任务查询和取消接口及 React 等待队列页面；新增等待调度分配 E2E 测试；`go test ./...`、`npx tsc --noEmit` 全部通过。
 - 新增 `/api/monitor/line-health`：按租户汇总主叫线路总呼叫、接通、失败、失败率和最近话务时间；样本量至少 10 且失败率不低于 50% 时标记 `degraded`。
 - 新增 `cti_outbound_line` 线路模型及 `/api/monitor/lines` 查询、`POST /api/monitor/lines` 配置接口，支持线路启停、优先级、容量和 active_calls 状态；媒体外呼会优先按租户、启用状态、优先级和剩余容量原子占用线路，呼叫结束释放 active_calls，无可用数据库线路时兼容启动参数路由；新增线路熔断字段，连续 5 次失败进入 OPEN、5 分钟后允许再次尝试，线路列表展示 circuitState/failureStreak/openedUntil；线路选择增加单探测竞争：OPEN 且熔断窗口到期时，只有成功将状态原子改为 HALF_OPEN 的请求可占用探测容量，其余请求重试选择；新增 `cti_line_circuit_event` 记录线路 CLOSED/OPEN/HALF_OPEN 状态变化、关联话务和结果码；新增 `/api/monitor/line-events` 按租户查询线路熔断状态时间线；线路事件使用数据库自增 ID，避免多实例 MAX(id)+1 冲突；新增 React 外呼线路页面，展示线路容量、熔断状态和事件时间线，并支持新增线路；新增 `cti_outbound_line_lease`，线路占用绑定 call_id 和 90 秒 lease_until，正常呼叫按 call_id 释放；媒体外呼每 30 秒续期线路租约，服务启动和 30 秒后台任务清理过期线路租约并修复 active_calls。
 - 已临时安装前端依赖并执行 `npx tsc --noEmit`，检查通过；`node_modules` 为生成目录，不纳入提交。

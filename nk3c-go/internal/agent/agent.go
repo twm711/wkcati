@@ -44,6 +44,16 @@ func (s *Service) acquireWorkerLeaseNamed(name string) (bool, error) {
 		return false, err
 	}
 	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
+		insert := `INSERT OR IGNORE INTO cti_worker_lock(name,owner,lease_until) VALUES(?,?,?)`
+		if s.db.Driver == "mysql" {
+			insert = `INSERT IGNORE INTO cti_worker_lock(name,owner,lease_until) VALUES(?,?,?)`
+		}
+		if _, e := s.db.Exec(insert, name, "bootstrap", "1970-01-01T00:00:00+00:00"); e == nil {
+			res, err = s.db.Exec(`UPDATE cti_worker_lock SET owner=?,lease_until=? WHERE name=? AND (lease_until<? OR owner=?)`, s.workerID, untilText, name, nowText, s.workerID)
+			n, err = res.RowsAffected()
+		}
+	}
 	return n == 1, err
 }
 
@@ -832,4 +842,11 @@ func (s *Service) ProcessWaitingTasks() (int64, error) {
 		return nil
 	})
 	return assigned, err
+}
+
+func (s *Service) triggerWaitingTasks() {
+	var n int
+	if s.db.QueryRow(`SELECT COUNT(*) FROM cti_waiting_task WHERE status='WAITING'`).Scan(&n) == nil && n > 0 {
+		_, _ = s.ProcessWaitingTasks()
+	}
 }
