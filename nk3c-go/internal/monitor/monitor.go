@@ -325,10 +325,15 @@ func (s *Service) UpsertLine(c *gin.Context) {
 	var id int64
 	_ = s.db.QueryRow(`SELECT id FROM cti_outbound_line WHERE tenant_id=? AND line_no=?`, u.TenantID, req.LineNo).Scan(&id)
 	if id == 0 {
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_outbound_line`).Scan(&id)
-		_, err := s.db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,rate_limit_per_minute,created_at) VALUES(?,?,?,?,?,?,?,?,0,?,?)`, id, u.TenantID, req.LineNo, req.Host, req.Port, enabled, req.Priority, req.Capacity, req.RateLimitPerMinute, store.NowFor(s.db.Driver))
+		res, err := s.db.Exec(`INSERT INTO cti_outbound_line(tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,rate_limit_per_minute,created_at) VALUES(?,?,?,?,?,?,?,0,?,?)`, u.TenantID, req.LineNo, req.Host, req.Port, enabled, req.Priority, req.Capacity, req.RateLimitPerMinute, store.NowFor(s.db.Driver))
 		if err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
+		id, _ = res.LastInsertId()
+		if id == 0 { _ = s.db.QueryRow(`SELECT id FROM cti_outbound_line WHERE tenant_id=? AND line_no=?`, u.TenantID, req.LineNo).Scan(&id) }
+		if id == 0 {
+			rinfo.GinFail(c, rinfo.CodeInternal, "线路插入成功但未返回 ID")
 			return
 		}
 	} else {
@@ -370,12 +375,9 @@ func (s *Service) UpdateLineRate(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
 	}
-	var auditID int64
-	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_line_rate_audit`).Scan(&auditID)
-	if _, err = s.db.Exec(`INSERT INTO cti_line_rate_audit(id,tenant_id,line_no,operator_id,old_rate,new_rate,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, auditID, u.TenantID, req.LineNo, u.ID, oldRate, req.RateLimitPerMinute, req.Reason, store.NowFor(s.db.Driver)); err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
-		return
-	}
+auditRes, err := s.db.Exec(`INSERT INTO cti_line_rate_audit(tenant_id,line_no,operator_id,old_rate,new_rate,reason,created_at) VALUES(?,?,?,?,?,?,?)`, u.TenantID, req.LineNo, u.ID, oldRate, req.RateLimitPerMinute, req.Reason, store.NowFor(s.db.Driver))
+	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+	_ = auditRes
 	_ = res
 	rinfo.GinOK(c, gin.H{"lineNo": req.LineNo, "oldRateLimitPerMinute": oldRate, "rateLimitPerMinute": req.RateLimitPerMinute}, "线路速率已更新")
 }
