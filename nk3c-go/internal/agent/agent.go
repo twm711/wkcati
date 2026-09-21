@@ -1134,6 +1134,14 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 		if active >= limit {
 			return errAbort
 		}
+		// 已配置数据库线路时，项目只有在线路仍有容量且未熔断时才继续自动拨号；无数据库线路则兼容启动参数路由。
+		var tenantID, lineCount, availableLines int64
+		_ = tx.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, pid).Scan(&tenantID)
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_outbound_line WHERE tenant_id=?`, tenantID).Scan(&lineCount)
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity AND (circuit_state<>'OPEN' OR opened_until IS NULL OR opened_until<=?)`, tenantID, store.NowFor(s.db.Driver)).Scan(&availableLines)
+		if lineCount > 0 && availableLines == 0 {
+			return errAbort
+		}
 		var agentID, queueID int64
 		var agentNo string
 		if err := tx.QueryRow(`SELECT aq.user_id,u.agent_no,aq.queue_id FROM cti_agent_queue aq JOIN cti_agent_state st ON st.user_id=aq.user_id AND st.state='READY' JOIN sys_user u ON u.id=aq.user_id JOIN prj_queue pq ON pq.queue_id=aq.queue_id WHERE pq.project_id=? AND aq.enabled=1 ORDER BY aq.user_id LIMIT 1`, pid).Scan(&agentID, &agentNo, &queueID); err != nil {
