@@ -445,3 +445,35 @@ func (s *Service) UpsertDialStrategy(c *gin.Context) {
 	}
 	rinfo.GinOK(c, gin.H{"projectId": req.ProjectID}, "拨号策略已保存")
 }
+
+// DialRuntime 返回拨号策略运行态，供自动拨号器和监控墙使用。
+func (s *Service) DialRuntime(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
+		return
+	}
+	q := `SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.enabled,(SELECT COUNT(*) FROM cti_sample_task t WHERE t.project_id=d.project_id AND t.status='LEASED'),(SELECT COUNT(*) FROM cti_agent_state a JOIN sys_user su ON su.id=a.user_id WHERE a.state='READY' AND su.tenant_id=p.tenant_id) FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE p.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY d.project_id`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var pid, mc, en, active, ready int64
+		var mode string
+		var abandon float64
+		if rows.Scan(&pid, &mode, &mc, &abandon, &en, &active, &ready) == nil {
+			out = append(out, gin.H{"projectId": pid, "mode": mode, "enabled": en == 1, "activeCalls": active, "maxConcurrent": mc, "availableAgents": ready, "headroom": mc - active, "abandonTarget": abandon, "running": en == 1 && active < mc && ready > 0})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}

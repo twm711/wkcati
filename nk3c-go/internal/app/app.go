@@ -119,6 +119,7 @@ func Build(db *store.DB) *App {
 		api.GET("/monitor/line-events", mo.LineCircuitEvents)
 		api.GET("/monitor/dial-strategies", mo.DialStrategies)
 		api.POST("/monitor/dial-strategies", mo.UpsertDialStrategy)
+		api.GET("/monitor/dial-runtime", mo.DialRuntime)
 		api.POST("/monitor/lines", mo.UpsertLine)
 		api.POST("/monitor/control", mo.Control)
 		api.GET("/monitor/control/capabilities", mo.Capabilities)
