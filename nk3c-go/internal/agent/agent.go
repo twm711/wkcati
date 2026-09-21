@@ -1024,7 +1024,7 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 		var pid, maxConcurrent, lastSamples int64
 		var mode string
 		var abandonTarget, currentMultiplier float64
-		if err := tx.QueryRow(`SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.current_multiplier,d.last_sample_count FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode IN ('PROGRESSIVE','PREDICTIVE') AND p.status='RUNNING' ORDER BY d.project_id LIMIT 1`).Scan(&pid, &mode, &maxConcurrent, &abandonTarget, &currentMultiplier, &lastSamples); err != nil {
+		if err := tx.QueryRow(`SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.current_multiplier,d.last_sample_count FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode IN ('PROGRESSIVE','PREDICTIVE') AND p.status='RUNNING' ORDER BY (SELECT COUNT(*) FROM cti_sample_task t WHERE t.project_id=d.project_id AND t.status='LEASED'), d.project_id LIMIT 1`).Scan(&pid, &mode, &maxConcurrent, &abandonTarget, &currentMultiplier, &lastSamples); err != nil {
 			return err
 		}
 		var active int64
