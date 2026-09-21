@@ -12,6 +12,8 @@ import Projects from './pages/Projects'
 import Export from './pages/Export'
 import Workorders from './pages/Workorders'
 import Ivr from './pages/Ivr'
+import DeadTasks from './pages/DeadTasks'
+import Lines from './pages/Lines'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -28,6 +30,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/workorders" element={<Workorders />} />
               <Route path="/ivr" element={<Ivr />} />
               <Route path="/dead-tasks" element={<DeadTasks />} />
+              <Route path="/lines" element={<Lines />} />
             </Route>
             <Route path="*" element={<Navigate to="/agent" replace />} />
           </Routes>

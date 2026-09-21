@@ -498,7 +498,5 @@ func recordLineCircuitEvent(tx *sql.Tx, lineID, callID int64, fromState, toState
 	if fromState == toState {
 		return
 	}
-	var id int64
-	_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_line_circuit_event`).Scan(&id)
-	_, _ = tx.Exec(`INSERT INTO cti_line_circuit_event(id,line_id,call_id,from_state,to_state,reason,created_at) VALUES(?,?,?,?,?,?,?)`, id, lineID, callID, fromState, toState, reason, created)
+	_, _ = tx.Exec(`INSERT INTO cti_line_circuit_event(line_id,call_id,from_state,to_state,reason,created_at) VALUES(?,?,?,?,?,?)`, lineID, callID, fromState, toState, reason, created)
 }
