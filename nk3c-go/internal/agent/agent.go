@@ -268,15 +268,15 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 	now := store.NowFor(s.db.Driver)
 	var recovered int64
 	err = s.db.Tx(func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT t.id,t.sample_id,t.call_id FROM cti_sample_task t JOIN cti_call_record c ON c.id=t.call_id WHERE t.status='LEASED' AND c.status='DIALING'`)
+		rows, err := tx.Query(`SELECT t.id,t.sample_id,t.call_id,t.retry_count,t.max_retries FROM cti_sample_task t JOIN cti_call_record c ON c.id=t.call_id WHERE t.status='LEASED' AND c.status='DIALING'`)
 		if err != nil {
 			return err
 		}
-		type task struct{ id, sampleID, callID int64 }
+		type task struct{ id, sampleID, callID, retryCount, maxRetries int64 }
 		var tasks []task
 		for rows.Next() {
 			var x task
-			if err := rows.Scan(&x.id, &x.sampleID, &x.callID); err != nil {
+			if err := rows.Scan(&x.id, &x.sampleID, &x.callID, &x.retryCount, &x.maxRetries); err != nil {
 				rows.Close()
 				return err
 			}
@@ -284,7 +284,7 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 		}
 		rows.Close()
 		for _, x := range tasks {
-			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE id=? AND status='LEASED'`, now, x.id)
+			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',retry_count=retry_count+1,completed_at=? WHERE id=? AND status='LEASED'`, now, x.id)
 			if err != nil {
 				return err
 			}
@@ -292,7 +292,11 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 			if n != 1 {
 				continue
 			}
-			_, _ = tx.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, x.sampleID)
+			nextSampleStatus := "IDLE"
+			if x.retryCount+1 >= x.maxRetries {
+				nextSampleStatus = "DEAD"
+			}
+			_, _ = tx.Exec(`UPDATE smp_sample SET status=?,owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, nextSampleStatus, x.sampleID)
 			_, _ = tx.Exec(`UPDATE cti_call_record SET status='CLOSED',end_time=?,result_code='NA' WHERE id=? AND status='DIALING'`, now, x.callID)
 			recovered++
 		}
@@ -311,15 +315,15 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 	now := store.NowFor(s.db.Driver)
 	var reclaimed int64
 	err = s.db.Tx(func(tx *sql.Tx) error {
-		rows, err := tx.Query(`SELECT id,sample_id,call_id FROM cti_sample_task WHERE status='LEASED' AND lease_until<?`, now)
+		rows, err := tx.Query(`SELECT id,sample_id,call_id,retry_count,max_retries FROM cti_sample_task WHERE status='LEASED' AND lease_until<?`, now)
 		if err != nil {
 			return err
 		}
-		type task struct{ id, sampleID, callID int64 }
+		type task struct{ id, sampleID, callID, retryCount, maxRetries int64 }
 		var tasks []task
 		for rows.Next() {
 			var x task
-			if err := rows.Scan(&x.id, &x.sampleID, &x.callID); err != nil {
+			if err := rows.Scan(&x.id, &x.sampleID, &x.callID, &x.retryCount, &x.maxRetries); err != nil {
 				rows.Close()
 				return err
 			}
@@ -329,7 +333,7 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 		for _, x := range tasks {
 			// Claim expiry atomically so two service instances cannot both reclaim
 			// the same lease after the initial SELECT.
-			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE id=? AND status='LEASED' AND lease_until<?`, now, x.id, now)
+			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',retry_count=retry_count+1,completed_at=? WHERE id=? AND status='LEASED' AND lease_until<?`, now, x.id, now)
 			if err != nil {
 				return err
 			}
@@ -337,7 +341,11 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 			if n != 1 {
 				continue
 			}
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, x.sampleID); err != nil {
+			nextSampleStatus := "IDLE"
+			if x.retryCount+1 >= x.maxRetries {
+				nextSampleStatus = "DEAD"
+			}
+			if _, err := tx.Exec(`UPDATE smp_sample SET status=?,owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, nextSampleStatus, x.sampleID); err != nil {
 				return err
 			}
 			_, _ = tx.Exec(`UPDATE cti_call_record SET status='CLOSED',end_time=?,result_code='NA' WHERE id=? AND status='DIALING' AND (result_code IS NULL OR result_code='')`, now, x.callID)
