@@ -96,6 +96,10 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if multiplier < 0.963 || multiplier > 0.965 || samples != 20 {
 		t.Fatalf("expected first predictive state 0.964/20, got %v/%d", multiplier, samples)
 	}
+	// 改变窗口质量：第二轮将一半接通改为 BREAKOFF，验证恢复/恶化变化仍经过 EWMA。
+	if _, err := db.Exec(`UPDATE cti_call_record SET result_code='BREAKOFF' WHERE project_id=? AND id>=998100 AND id<998110`, pid); err != nil {
+		t.Fatal(err)
+	}
 	// 释放第一轮测试领取的样本，再次领取，验证第二轮读取上一轮倍率而非重置为 1。
 	_, _ = db.Exec(`DELETE FROM cti_sample_task WHERE sample_id=?`, sid)
 	_, _ = db.Exec(`DELETE FROM cti_call_record WHERE sample_id=?`, sid)
@@ -106,7 +110,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
 		t.Fatal(err)
 	}
-	if multiplier < 0.937 || multiplier > 0.940 || samples != 20 {
-		t.Fatalf("expected second EWMA state about 0.939/20, got %v/%d", multiplier, samples)
+	if multiplier < 0.853 || multiplier > 0.857 || samples != 20 {
+		t.Fatalf("expected second EWMA state about 0.855/20 after quality deterioration, got %v/%d", multiplier, samples)
 	}
 }
