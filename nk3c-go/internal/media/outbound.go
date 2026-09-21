@@ -51,10 +51,17 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 		return nil, "", err
 	}
 	var lineID int64
-	if selector, ok := o.Driver.(interface {
+	var selector interface {
 		ReserveOutboundLine(int64) (agent.OutboundLine, error)
+		RenewOutboundLine(int64, int64) error
 		ReleaseOutboundLine(int64, int64) error
-	}); ok {
+	}
+	selector, _ = o.Driver.(interface {
+		ReserveOutboundLine(int64) (agent.OutboundLine, error)
+		RenewOutboundLine(int64, int64) error
+		ReleaseOutboundLine(int64, int64) error
+	})
+	if selector != nil {
 		if line, reserveErr := selector.ReserveOutboundLine(callID); reserveErr == nil {
 			lineID, task.CallerID, o.PeerHost, o.PeerPort = line.ID, line.LineNo, line.Host, line.Port
 			defer func() { _ = selector.ReleaseOutboundLine(lineID, callID) }()
@@ -103,6 +110,24 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 	o.register(callID, func(ctx context.Context) error { return c.Hangup(ctx) })
 	defer o.unregister(callID)
 	defer func() { _ = c.Close() }()
+	if selector != nil && lineID > 0 {
+		beatCtx, stopBeat := context.WithCancel(ctx)
+		defer stopBeat()
+		go func() {
+			t := time.NewTicker(30 * time.Second)
+			defer t.Stop()
+			for {
+				select {
+				case <-t.C:
+					if err := selector.RenewOutboundLine(lineID, callID); err != nil {
+						slog.Warn("线路租约续期失败", "call", callID, "line", lineID, "err", err)
+					}
+				case <-beatCtx.Done():
+					return
+				}
+			}
+		}()
+	}
 	slog.Info("外呼已接通", "call", callID, "phone", task.Phone, "questions", len(task.Questions))
 
 	tap := startAudioTap(&c.DialogMedia, filepath.Join(o.RecordDir, fmt.Sprintf("out-%d", callID)+".wav"))

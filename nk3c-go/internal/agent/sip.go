@@ -84,6 +84,18 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 	return line, fmt.Errorf("外呼线路容量竞争失败")
 }
 
+func (s *Service) RenewOutboundLine(lineID, callID int64) error {
+	leaseUntil := store.TimeFor(s.db.Driver, time.Now().UTC().Add(90*time.Second))
+	res, err := s.db.Exec(`UPDATE cti_outbound_line_lease SET lease_until=? WHERE call_id=? AND line_id=?`, leaseUntil, callID, lineID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("线路租约不存在或已过期")
+	}
+	return nil
+}
+
 func (s *Service) ReleaseOutboundLine(lineID, callID int64) error {
 	res, err := s.db.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=? AND line_id=?`, callID, lineID)
 	if err != nil {
