@@ -257,3 +257,5 @@ PREDICTIVE 多轮测试增加第四轮短样本保护：将窗口历史减少到
 进一步收紧候选项目查询：在进入排序前排除当前 LEASED 数已达到项目 `max_concurrent` 的项目，配合按负载升序选择，避免满载项目占据 Claim 入口；完整多项目真实 MySQL 测试仍待补齐。
 
 新增 `TestClaimSkipsFullProjectForAvailableProject`：SQLite 集成场景构造项目 3 已达到 max_concurrent、项目 4 有 READY 坐席和 IDLE 样本，生产 `ClaimProgressiveTask` 成功选择项目 4；验证多项目候选隔离和满载跳过。
+
+扩展多项目 Claim 测试为 PREDICTIVE：项目 3 满载且历史 20 条 BREAKOFF，项目 4 可用且历史 20 条 SUCCESS；生产 Claim 选择项目 4，并断言项目 3 `current_multiplier` 保持 1、项目 4 独立更新至约 1.03，证明项目级历史和倍率状态不污染。共享同一 READY 坐席的跨项目公平性仍待单独测试。
