@@ -80,6 +80,25 @@ func TestOutboundInvite486FinishesBusy(t *testing.T) {
 	if recordedCaller != "line-486" {
 		t.Fatalf("expected selected caller_no line-486, got %s", recordedCaller)
 	}
+	for i := int64(0); i < 4; i++ {
+		if _, err := db.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,status) VALUES(?,?,?,?)`, 9510+i, 1, "连续失败", "LEASED"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,sample_id,agent_id,called_no,caller_no,status,begin_time) VALUES(?,?,?,?,?,?,?,?)`, 9511+i, 1, 9510+i, 0, "13800000999", "", "DIALING", store.NowFor(db.Driver)); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := srv.Outbound.Dial(ctx, 9511+i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var finalStreak int
+	var finalCircuit string
+	if err := db.QueryRow(`SELECT failure_streak,circuit_state FROM cti_outbound_line WHERE id=?`, 9601).Scan(&finalStreak, &finalCircuit); err != nil {
+		t.Fatal(err)
+	}
+	if finalStreak != 5 || finalCircuit != "OPEN" {
+		t.Fatalf("expected 5 failures and OPEN, got %d/%s", finalStreak, finalCircuit)
+	}
 }
 
 func TestOutboundInvite480FinishesNA(t *testing.T) {

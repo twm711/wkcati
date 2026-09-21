@@ -201,3 +201,5 @@
 真实 SIP 486 E2E 已接入数据库线路：选线后回写实际 caller_no，486 映射 BUSY，话务 CLOSED，线路租约释放且 active_calls=0；新增 `SetOutboundCaller` 修复线路失败统计无法关联实际选线的问题。
 
 扩展真实 SIP 486 + 数据库线路 E2E 断言：确认实际 caller_no 回写为 line-486、线路 failure_streak=1、circuit_state=CLOSED、active_calls=0，话务结果为 CLOSED/BUSY；线路健康度反馈已由真实 SIP 失败驱动。
+
+扩展真实 SIP 486 线路 E2E 为连续 5 次失败：同一数据库线路最终 `failure_streak=5`、`circuit_state=OPEN`、`active_calls=0`，证明真实 SIP 失败可以推动线路熔断阈值；OPEN 后自动拨号拒绝路径的任务收尾仍需单独补测。
