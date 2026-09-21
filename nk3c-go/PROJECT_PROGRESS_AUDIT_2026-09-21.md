@@ -229,3 +229,5 @@
 新增可选 `TestMySQLClaimTransactionCreatesOneCallAndTask`：16 个 MySQL 事务竞争同一 IDLE 样本，使用 `SELECT ... FOR UPDATE` 后在同一事务更新样本、创建 cti_call_record 和 cti_sample_task，期望最终只存在一组完整记录；当前无 DSN，仍待真实环境执行。
 
 新增可选 `internal/agent/mysql_claim_integration_test.go`，直接调用生产 `ClaimProgressiveTask`：构造 RUNNING/PROGRESSIVE 项目、READY 坐席、队列和 IDLE 样本，8 个并发调用者竞争，期望只有 1 次完整领取；当前无 DSN，测试跳过，真实 MySQL 执行待外部环境。
+
+将生产 MySQL Claim 集成测试切换为 PREDICTIVE，`max_concurrent=2`、READY 坐席为 1，8 个并发调用仍只允许 1 次领取；新增断言最小样本保护保持 `current_multiplier=1`、`last_sample_count=0`。真实 DSN 未配置，测试待外部执行。

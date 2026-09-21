@@ -33,7 +33,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO prj_project(id,project_code,project_name,status,tenant_id,group_id) VALUES(?,?,?,?,?,?)`, pid, "MC", "mysql claim", "RUNNING", 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,enabled,updated_at,current_multiplier,last_sample_count) VALUES(?,?,?, ?,?,?,?,?)`, pid, "PROGRESSIVE", 1, 3, 1, time.Now(), 1, 0); err != nil {
+	if _, err := db.Exec(`INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,enabled,updated_at,current_multiplier,last_sample_count) VALUES(?,?,?, ?,?,?,?,?)`, pid, "PREDICTIVE", 2, 3, 1, time.Now(), 1, 0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO cti_queue(id,tenant_id,org_id,group_id,name,status) VALUES(?,?,?,?,?,1)`, qid, 1, 1, 1, "mysql-claim"); err != nil {
@@ -72,5 +72,13 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	wg.Wait()
 	if successes != 1 {
 		t.Fatalf("expected one production claim, got %d", successes)
+	}
+	var multiplier float64
+	var samples int
+	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
+		t.Fatal(err)
+	}
+	if multiplier != 1 || samples != 0 {
+		t.Fatalf("expected predictive state 1/0 under minimum samples, got %v/%d", multiplier, samples)
 	}
 }
