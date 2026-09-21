@@ -261,3 +261,5 @@ PREDICTIVE 多轮测试增加第四轮短样本保护：将窗口历史减少到
 扩展多项目 Claim 测试为 PREDICTIVE：项目 3 满载且历史 20 条 BREAKOFF，项目 4 可用且历史 20 条 SUCCESS；生产 Claim 选择项目 4，并断言项目 3 `current_multiplier` 保持 1、项目 4 独立更新至约 1.03，证明项目级历史和倍率状态不污染。共享同一 READY 坐席的跨项目公平性仍待单独测试。
 
 扩展多项目 PREDICTIVE 测试使项目 3/4 共享同一 READY 坐席 23（分别加入不同项目队列），并断言项目 4 的生产 Claim 实际使用坐席 23，同时项目级倍率仍隔离；这验证了共享 READY 坐席的基础选择路径，但尚未证明跨项目全局 capacity 公平/硬上限。
+
+实现共享 READY 坐席的全局硬容量保护：Claim 在项目队列 capacity 之外统计该坐席所有队列的 LEASED 任务，并以启用队列最大 capacity 作为坐席全局上限；跨项目已占满时拒绝第二次 Claim。另将 PREDICTIVE current_multiplier/last_sample_count 持久化延后到坐席、线路和样本容量检查通过后，避免被拒绝的 Claim 改写预测状态；多项目共享坐席测试全绿。

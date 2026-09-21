@@ -1022,6 +1022,9 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 	var callID int64
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var pid, maxConcurrent, lastSamples int64
+		var predictiveMultiplier float64
+		var predictiveSamples int64
+		var persistPredictive bool
 		var mode string
 		var abandonTarget, currentMultiplier float64
 		if err := tx.QueryRow(`SELECT d.project_id,d.mode,d.max_concurrent,d.abandon_target,d.current_multiplier,d.last_sample_count FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode IN ('PROGRESSIVE','PREDICTIVE') AND p.status='RUNNING' AND (SELECT COUNT(*) FROM cti_sample_task t WHERE t.project_id=d.project_id AND t.status='LEASED') < d.max_concurrent ORDER BY (SELECT COUNT(*) FROM cti_sample_task t WHERE t.project_id=d.project_id AND t.status='LEASED'), d.project_id LIMIT 1`).Scan(&pid, &mode, &maxConcurrent, &abandonTarget, &currentMultiplier, &lastSamples); err != nil {
@@ -1121,7 +1124,9 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 				if multiplier > maxMultiplier {
 					multiplier = maxMultiplier
 				}
-				_, _ = tx.Exec(`UPDATE cti_dial_strategy SET current_multiplier=?,last_sample_count=?,updated_at=? WHERE project_id=?`, multiplier, total, store.NowFor(s.db.Driver), pid)
+				predictiveMultiplier = multiplier
+				predictiveSamples = total
+				persistPredictive = true
 			}
 			limit = int64(float64(ready) * multiplier)
 			if limit < 1 {
@@ -1152,6 +1157,16 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, agentID, queueID).Scan(&agentActive)
 		if cap > 0 && agentActive >= cap {
 			return errAbort
+		}
+		// 坐席可能加入多个项目队列；工作容量按该坐席启用队列中的最大 capacity 作为全局硬上限，避免跨项目重复占用。
+		var globalCap, globalActive int64
+		_ = tx.QueryRow(`SELECT COALESCE(MAX(capacity),1) FROM cti_agent_queue WHERE user_id=? AND enabled=1`, agentID).Scan(&globalCap)
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND status='LEASED'`, agentID).Scan(&globalActive)
+		if globalCap > 0 && globalActive >= globalCap {
+			return errAbort
+		}
+		if persistPredictive {
+			_, _ = tx.Exec(`UPDATE cti_dial_strategy SET current_multiplier=?,last_sample_count=?,updated_at=? WHERE project_id=?`, predictiveMultiplier, predictiveSamples, store.NowFor(s.db.Driver), pid)
 		}
 		var sid int64
 		var phone string

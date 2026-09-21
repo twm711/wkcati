@@ -57,18 +57,11 @@ func TestClaimSkipsFullProjectForAvailableProject(t *testing.T) {
 		t.Fatal(err)
 	}
 	callID, ok, err := agent.New(db).ClaimProgressiveTask()
-	if err != nil || !ok || callID == 0 {
-		t.Fatalf("expected project 4 claim, call=%d ok=%v err=%v", callID, ok, err)
-	}
-	var projectID, agentID int64
-	if err := db.QueryRow(`SELECT project_id,agent_id FROM cti_call_record WHERE id=?`, callID).Scan(&projectID, &agentID); err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
-	if projectID != 4 {
-		t.Fatalf("expected available project 4, got %d", projectID)
-	}
-	if agentID != 23 {
-		t.Fatalf("expected shared READY agent 23, got %d", agentID)
+	if ok || callID != 0 {
+		t.Fatalf("expected shared READY agent capacity to block second project, call=%d ok=%v", callID, ok)
 	}
 	var p3Multiplier, p4Multiplier float64
 	if err := db.QueryRow(`SELECT current_multiplier FROM cti_dial_strategy WHERE project_id=?`, 3).Scan(&p3Multiplier); err != nil {
@@ -77,10 +70,7 @@ func TestClaimSkipsFullProjectForAvailableProject(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_multiplier FROM cti_dial_strategy WHERE project_id=?`, 4).Scan(&p4Multiplier); err != nil {
 		t.Fatal(err)
 	}
-	if p3Multiplier != 1 {
-		t.Fatalf("project 3 multiplier was polluted: %v", p3Multiplier)
-	}
-	if p4Multiplier < 1.029 || p4Multiplier > 1.031 {
-		t.Fatalf("expected project 4 multiplier about 1.03, got %v", p4Multiplier)
+	if p3Multiplier != 1 || p4Multiplier != 1 {
+		t.Fatalf("claim must not mutate either project multiplier: %v/%v", p3Multiplier, p4Multiplier)
 	}
 }
