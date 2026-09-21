@@ -78,4 +78,19 @@ func TestTenantScopeRejectsCrossTenantProject(t *testing.T) {
 	if dispatch["success"] == true {
 		t.Fatalf("租户2不应派发租户1项目: %v", dispatch)
 	}
+
+	admin := login(t, ts.URL, "admin", "123456")
+	all := tenantGET(t, ts.URL, "/api/project", admin)
+	if all["success"] != true {
+		t.Fatalf("domainAdmin 跨租户项目查询失败: %v", all)
+	}
+	foundTenant2 := false
+	for _, raw := range all["data"].([]interface{}) {
+		if raw.(map[string]interface{})["projectId"].(float64) == 20 {
+			foundTenant2 = true
+		}
+	}
+	if !foundTenant2 {
+		t.Fatal("domainAdmin 未看到租户2项目")
+	}
 }
