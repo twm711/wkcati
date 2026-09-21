@@ -130,6 +130,13 @@ func (s *Service) Dispatch(c *gin.Context) {
 				rinfo.GinFail(c, rinfo.CodePermission, "坐席未加入项目队列")
 				return errAbort
 			}
+			var capacity, active int
+			_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, u.ID, queueID.Int64).Scan(&capacity)
+			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, u.ID, queueID.Int64).Scan(&active)
+			if capacity > 0 && active >= capacity {
+				rinfo.GinFail(c, rinfo.CodeState, "坐席队列容量已满")
+				return errAbort
+			}
 		}
 		halfyear, _ := strconv.ParseInt(param(tx, "halfyear.days", "180"), 10, 64)
 		redialMax, _ := strconv.ParseInt(param(tx, "redial.max", "3"), 10, 64)
