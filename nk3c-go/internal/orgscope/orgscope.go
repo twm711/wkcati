@@ -101,6 +101,80 @@ func (s *Service) ListGroups(c *gin.Context) {
 	rinfo.GinOK(c, out, "ok")
 }
 
+func (s *Service) AssignUserGroup(c *gin.Context) {
+	op := auth.From(c)
+	if !auth.HasRoleP(op, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要坐席组管理权限")
+		return
+	}
+	uid, _ := strconv.ParseInt(c.Param("uid"), 10, 64)
+	var req struct {
+		OrgID   int64 `json:"orgId" binding:"required"`
+		GroupID int64 `json:"groupId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "orgId/groupId 参数错误")
+		return
+	}
+	var userTenant, orgTenant, groupOrg int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM sys_user WHERE id=?`, uid).Scan(&userTenant); err != nil {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "用户不存在")
+		return
+	}
+	if err := s.db.QueryRow(`SELECT tenant_id FROM sys_org WHERE id=?`, req.OrgID).Scan(&orgTenant); err != nil {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "机构不存在")
+		return
+	}
+	if err := s.db.QueryRow(`SELECT org_id FROM sys_group WHERE id=? AND status=1`, req.GroupID).Scan(&groupOrg); err != nil || groupOrg != req.OrgID {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "坐席组不存在")
+		return
+	}
+	if userTenant != orgTenant || (!auth.HasRoleP(op, "domainAdmin") && (userTenant != op.TenantID || orgTenant != op.TenantID)) {
+		rinfo.GinFail(c, rinfo.CodePermission, "租户归属不一致")
+		return
+	}
+	if _, err := s.db.Exec(`UPDATE sys_user SET org_id=?,group_id=? WHERE id=?`, req.OrgID, req.GroupID, uid); err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	rinfo.GinOK(c, gin.H{"userId": uid, "orgId": req.OrgID, "groupId": req.GroupID}, "坐席组归属已更新")
+}
+
+func (s *Service) AssignProjectGroup(c *gin.Context) {
+	op := auth.From(c)
+	if !auth.HasRoleP(op, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要坐席组管理权限")
+		return
+	}
+	pid, _ := strconv.ParseInt(c.Param("pid"), 10, 64)
+	var req struct {
+		GroupID int64 `json:"groupId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "groupId 参数错误")
+		return
+	}
+	var tenant, orgID int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, pid).Scan(&tenant); err != nil {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
+		return
+	}
+	if err := s.db.QueryRow(`SELECT org_id FROM sys_group WHERE id=? AND status=1`, req.GroupID).Scan(&orgID); err != nil {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "坐席组不存在")
+		return
+	}
+	var orgTenant int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM sys_org WHERE id=?`, orgID).Scan(&orgTenant); err != nil || orgTenant != tenant || (!auth.HasRoleP(op, "domainAdmin") && tenant != op.TenantID) {
+		rinfo.GinFail(c, rinfo.CodePermission, "租户归属不一致")
+		return
+	}
+	if _, err := s.db.Exec(`UPDATE prj_project SET group_id=? WHERE id=?`, req.GroupID, pid); err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	rinfo.GinOK(c, gin.H{"projectId": pid, "groupId": req.GroupID}, "项目坐席组归属已更新")
+}
+
 func (s *Service) CreateGroup(c *gin.Context) {
 	u := auth.From(c)
 	oid, _ := strconv.ParseInt(c.Param("oid"), 10, 64)

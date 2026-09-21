@@ -1,6 +1,29 @@
 package app_test
 
-import "testing"
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+func tenantPut(t *testing.T, base, path, token string, body interface{}) map[string]interface{} {
+	t.Helper()
+	b, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPut, base+path, strings.NewReader(string(b)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	out := map[string]interface{}{}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
 
 func TestOrgGroupAdministrationScope(t *testing.T) {
 	ts, db, _ := setup(t)
@@ -21,6 +44,13 @@ func TestOrgGroupAdministrationScope(t *testing.T) {
 	}
 	if _, err := db.Exec(`SELECT id FROM sys_group WHERE id=?`, group["data"].(map[string]interface{})["id"]); err != nil {
 		t.Fatal(err)
+	}
+	gid := group["data"].(map[string]interface{})["id"].(float64)
+	if r := tenantPut(t, ts.URL, "/api/users/2/group", admin, map[string]interface{}{"orgId": id, "groupId": gid}); r["success"] != true {
+		t.Fatalf("坐席归组失败: %v", r)
+	}
+	if r := tenantPut(t, ts.URL, "/api/project/1/group", admin, map[string]interface{}{"groupId": gid}); r["success"] != true {
+		t.Fatalf("项目归组失败: %v", r)
 	}
 }
 
