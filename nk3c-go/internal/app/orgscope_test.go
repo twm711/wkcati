@@ -52,6 +52,17 @@ func TestOrgGroupAdministrationScope(t *testing.T) {
 	if r := tenantPut(t, ts.URL, "/api/project/1/group", admin, map[string]interface{}{"groupId": gid}); r["success"] != true {
 		t.Fatalf("项目归组失败: %v", r)
 	}
+	skill := tenantPost(t, ts.URL, "/api/skills", admin, map[string]string{"name": "中文访谈"})
+	if skill["success"] != true {
+		t.Fatalf("技能创建失败: %v", skill)
+	}
+	skillID := skill["data"].(map[string]interface{})["id"].(float64)
+	if r := tenantPut(t, ts.URL, "/api/users/2/skill", admin, map[string]interface{}{"skillId": skillID, "level": 2}); r["success"] != true {
+		t.Fatalf("坐席技能分配失败: %v", r)
+	}
+	if r := tenantPut(t, ts.URL, "/api/project/1/skills", admin, map[string]interface{}{"requirements": []map[string]interface{}{{"skillId": skillID, "minLevel": 1}}}); r["success"] != true {
+		t.Fatalf("项目技能要求失败: %v", r)
+	}
 }
 
 func itoa(v int64) string {

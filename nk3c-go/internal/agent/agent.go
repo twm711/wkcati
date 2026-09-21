@@ -100,6 +100,12 @@ func (s *Service) Dispatch(c *gin.Context) {
 			rinfo.GinFail(c, rinfo.CodeState, fmt.Sprintf("项目 %s 非运行中（%s）或问卷未发布（%s）", projectID, pstatus, qstatus))
 			return errAbort
 		}
+		var missingSkills int
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM prj_skill_requirement r WHERE r.project_id=? AND NOT EXISTS (SELECT 1 FROM sys_user_skill us WHERE us.user_id=? AND us.skill_id=r.skill_id AND us.level>=r.min_level)`, projectID, u.ID).Scan(&missingSkills)
+		if missingSkills > 0 {
+			rinfo.GinFail(c, rinfo.CodePermission, "坐席技能不满足项目要求")
+			return errAbort
+		}
 		halfyear, _ := strconv.ParseInt(param(tx, "halfyear.days", "180"), 10, 64)
 		redialMax, _ := strconv.ParseInt(param(tx, "redial.max", "3"), 10, 64)
 		cutoff := time.Now().UTC().Add(-time.Duration(halfyear) * 24 * time.Hour).Format("2006-01-02T15:04:05+00:00")

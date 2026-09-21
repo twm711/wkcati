@@ -4,6 +4,7 @@
 package orgscope
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 
@@ -99,6 +100,125 @@ func (s *Service) ListGroups(c *gin.Context) {
 		}
 	}
 	rinfo.GinOK(c, out, "ok")
+}
+
+func (s *Service) ListSkills(c *gin.Context) {
+	u := auth.From(c)
+	rows, err := s.db.Query(`SELECT id,name,status FROM sys_skill WHERE tenant_id=? ORDER BY id`, u.TenantID)
+	if auth.HasRoleP(u, "domainAdmin") {
+		rows, err = s.db.Query(`SELECT id,name,status FROM sys_skill ORDER BY id`)
+	}
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id int64
+		var name string
+		var status int
+		if rows.Scan(&id, &name, &status) == nil {
+			out = append(out, gin.H{"id": id, "name": name, "status": status})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+func (s *Service) CreateSkill(c *gin.Context) {
+	u := auth.From(c)
+	if !auth.HasRoleP(u, "domainAdmin", "orgAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要技能管理权限")
+		return
+	}
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "name 参数错误")
+		return
+	}
+	res, err := s.db.Exec(`INSERT INTO sys_skill(tenant_id,name,status) VALUES(?,?,1)`, u.TenantID, req.Name)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	id, _ := res.LastInsertId()
+	rinfo.GinOK(c, gin.H{"id": id, "name": req.Name, "tenantId": u.TenantID}, "技能已创建")
+}
+
+func (s *Service) AssignUserSkill(c *gin.Context) {
+	op := auth.From(c)
+	if !auth.HasRoleP(op, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要技能管理权限")
+		return
+	}
+	uid, _ := strconv.ParseInt(c.Param("uid"), 10, 64)
+	var req struct {
+		SkillID int64 `json:"skillId" binding:"required"`
+		Level   int   `json:"level"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Level < 1 {
+		rinfo.GinFail(c, rinfo.CodeParam, "skillId/level 参数错误")
+		return
+	}
+	var ut, st int64
+	if s.db.QueryRow(`SELECT tenant_id FROM sys_user WHERE id=?`, uid).Scan(&ut) != nil || s.db.QueryRow(`SELECT tenant_id FROM sys_skill WHERE id=? AND status=1`, req.SkillID).Scan(&st) != nil || ut != st || (!auth.HasRoleP(op, "domainAdmin") && ut != op.TenantID) {
+		rinfo.GinFail(c, rinfo.CodePermission, "租户归属不一致")
+		return
+	}
+	if s.db.Driver == "mysql" {
+		_, _ = s.db.Exec(`INSERT INTO sys_user_skill(user_id,skill_id,level) VALUES(?,?,?) ON DUPLICATE KEY UPDATE level=VALUES(level)`, uid, req.SkillID, req.Level)
+	} else {
+		_, _ = s.db.Exec(`INSERT INTO sys_user_skill(user_id,skill_id,level) VALUES(?,?,?) ON CONFLICT(user_id,skill_id) DO UPDATE SET level=excluded.level`, uid, req.SkillID, req.Level)
+	}
+	rinfo.GinOK(c, gin.H{"userId": uid, "skillId": req.SkillID, "level": req.Level}, "坐席技能已更新")
+}
+
+func (s *Service) SetProjectSkills(c *gin.Context) {
+	op := auth.From(c)
+	if !auth.HasRoleP(op, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要技能管理权限")
+		return
+	}
+	pid, _ := strconv.ParseInt(c.Param("pid"), 10, 64)
+	var tenant int64
+	if s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, pid).Scan(&tenant) != nil || (!auth.HasRoleP(op, "domainAdmin") && tenant != op.TenantID) {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
+		return
+	}
+	var req struct {
+		Requirements []struct {
+			SkillID  int64 `json:"skillId"`
+			MinLevel int   `json:"minLevel"`
+		} `json:"requirements"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "requirements 参数错误")
+		return
+	}
+	if err := s.db.Tx(func(tx *sql.Tx) error {
+		if _, e := tx.Exec(`DELETE FROM prj_skill_requirement WHERE project_id=?`, pid); e != nil {
+			return e
+		}
+		for _, r := range req.Requirements {
+			if r.MinLevel < 1 {
+				r.MinLevel = 1
+			}
+			var st int64
+			if e := tx.QueryRow(`SELECT tenant_id FROM sys_skill WHERE id=? AND status=1`, r.SkillID).Scan(&st); e != nil || st != tenant {
+				return fmt.Errorf("技能不属于项目租户")
+			}
+			if _, e := tx.Exec(`INSERT INTO prj_skill_requirement(project_id,skill_id,min_level) VALUES(?,?,?)`, pid, r.SkillID, r.MinLevel); e != nil {
+				return e
+			}
+		}
+		return nil
+	}); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, err.Error())
+		return
+	}
+	rinfo.GinOK(c, gin.H{"projectId": pid, "count": len(req.Requirements)}, "项目技能要求已更新")
 }
 
 func (s *Service) AssignUserGroup(c *gin.Context) {

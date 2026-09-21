@@ -77,9 +77,13 @@ func Build(db *store.DB) *App {
 		api.GET("/orgs/:oid/groups", orgs.ListGroups)
 		api.POST("/orgs/:oid/groups", orgs.CreateGroup)
 		api.PUT("/users/:uid/group", orgs.AssignUserGroup)
+		api.GET("/skills", orgs.ListSkills)
+		api.POST("/skills", orgs.CreateSkill)
+		api.PUT("/users/:uid/skill", orgs.AssignUserSkill)
 
 		prj := api.Group("/project")
 		prj.PUT("/:pid/group", orgs.AssignProjectGroup)
+		prj.PUT("/:pid/skills", orgs.SetProjectSkills)
 		prj.GET("", p.List)
 		prj.GET("/:pid", p.Detail)
 		prj.POST("", a.RequireRoles("groupAdmin"), p.Create)
