@@ -193,3 +193,5 @@
 新增真实 SIP 480 Temporarily Unavailable E2E：被叫模拟器返回 480，外呼映射为 NA，话务收尾为 CLOSED/NA；486 Busy Here 与 480 超时/不可用响应均已在真实 diago 链路验证。
 
 新增真实 SIP 408 Request Timeout E2E：被叫模拟器返回 408，外呼映射为 NA，话务收尾为 CLOSED/NA；486、480、408 三类真实 SIP 失败均已验证。
+
+新增真实 SIP 404 Not Found E2E：被叫模拟器返回 404，外呼映射为 INVALID，话务收尾为 CLOSED/INVALID；486、480、408、404 真实失败链路均已验证。
