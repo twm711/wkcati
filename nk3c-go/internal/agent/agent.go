@@ -148,7 +148,18 @@ func (s *Service) Dispatch(c *gin.Context) {
 			_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, u.ID, queueID.Int64).Scan(&capacity)
 			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, u.ID, queueID.Int64).Scan(&active)
 			if capacity > 0 && active >= capacity {
-				rinfo.GinFail(c, rinfo.CodeState, "坐席队列容量已满")
+				var waitID, queuePriority int64
+				_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_waiting_task`).Scan(&waitID)
+				_ = tx.QueryRow(`SELECT priority FROM prj_queue WHERE project_id=?`, projectID).Scan(&queuePriority)
+				if queuePriority == 0 {
+					queuePriority = 100
+				}
+				waitSQL := `INSERT INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?) ON CONFLICT(agent_id,project_id,status) DO NOTHING`
+				if s.db.Driver == "mysql" {
+					waitSQL = `INSERT IGNORE INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?)`
+				}
+				_, _ = tx.Exec(waitSQL, waitID, tenantID, projectID, queueID.Int64, u.ID, queuePriority, store.NowFor(s.db.Driver))
+				rinfo.GinOK(c, gin.H{"status": "WAITING", "queueId": queueID.Int64, "projectId": projectID}, "已进入等待队列")
 				return errAbort
 			}
 		}
@@ -197,6 +208,7 @@ func (s *Service) Dispatch(c *gin.Context) {
 		if err != nil {
 			return err
 		}
+		_, _ = tx.Exec(`UPDATE cti_waiting_task SET status='ASSIGNED',assigned_at=? WHERE id=(SELECT id FROM cti_waiting_task WHERE agent_id=? AND project_id=? AND status='WAITING' ORDER BY priority,created_at LIMIT 1)`, store.NowFor(s.db.Driver), u.ID, projectID)
 		phones := []string{}
 		prows, err := tx.Query(`SELECT phone_no FROM smp_phone WHERE sample_id=? AND valid_flag=1 ORDER BY sort_no`, sid)
 		if err != nil {
@@ -254,6 +266,54 @@ func (s *Service) Dispatch(c *gin.Context) {
 	if okCall != 0 {
 		s.publishQC(u, "DIAL", okCall, okSample, okName, nil)
 	}
+}
+
+func (s *Service) WaitingTasks(c *gin.Context) {
+	u := auth.From(c)
+	q := `SELECT id,project_id,queue_id,agent_id,priority,status,created_at,COALESCE(assigned_at,'') FROM cti_waiting_task WHERE tenant_id=?`
+	args := []interface{}{u.TenantID}
+	if !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		q += ` AND agent_id=?`
+		args = append(args, u.ID)
+	}
+	q += ` ORDER BY priority,created_at LIMIT 200`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id, pid, qid, aid, pri int64
+		var status, created, assigned string
+		if rows.Scan(&id, &pid, &qid, &aid, &pri, &status, &created, &assigned) == nil {
+			out = append(out, gin.H{"id": id, "projectId": pid, "queueId": qid, "agentId": aid, "priority": pri, "status": status, "createdAt": created, "assignedAt": assigned})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+func (s *Service) CancelWaitingTask(c *gin.Context) {
+	u := auth.From(c)
+	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
+	cancelSQL := `UPDATE cti_waiting_task SET status='CANCELLED' WHERE id=? AND tenant_id=? AND status='WAITING' AND agent_id=?`
+	args := []interface{}{id, u.TenantID, u.ID}
+	if auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		cancelSQL = `UPDATE cti_waiting_task SET status='CANCELLED' WHERE id=? AND tenant_id=? AND status='WAITING'`
+		args = []interface{}{id, u.TenantID}
+	}
+	res, err := s.db.Exec(cancelSQL, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "等待任务不存在或已处理")
+		return
+	}
+	rinfo.GinOK(c, nil, "等待任务已取消")
 }
 
 func (s *Service) DeadTasks(c *gin.Context) {
