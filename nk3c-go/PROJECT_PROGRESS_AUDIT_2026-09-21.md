@@ -177,3 +177,5 @@
 补充：线路领取增加 `rate_window_start/rate_window_count` 分钟桶，并通过带条件的原子 UPDATE 同时校验和递增窗口计数，降低多实例同时领取导致基础分钟限流超出的风险；这仍不是完整分布式令牌桶，MySQL 多实例压力验证待执行。
 
 新增 `TestLineRateBucketAndCapacityAreAtomic` 并发测试：8 个并发领取者竞争同一条 capacity=2、rate_limit_per_minute=2 的线路，SQLite 结果严格成功 2 次；同时保留半开探测单成功测试。该测试证明本地原子更新路径有效，MySQL 多实例仍需真实环境验证。
+
+新增 `TestExpiredLineLeaseReleasesCapacity`：模拟线路租约过期后执行回收，验证租约删除且 `active_calls` 从 1 恢复为 0；SIP Dial 失败回滚仍需真实媒体层注入测试。
