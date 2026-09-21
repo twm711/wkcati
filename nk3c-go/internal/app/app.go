@@ -102,6 +102,7 @@ func Build(db *store.DB) *App {
 		api.POST("/agent/state", ag.State)
 		api.POST("/agent/task/renew", ag.RenewTask)
 		api.GET("/agent/dead-tasks", ag.DeadTasks)
+		api.GET("/agent/dead-tasks/:sampleId/attempts", ag.DeadTaskAttempts)
 		api.POST("/agent/dead-tasks/:sampleId/retry", ag.RetryDeadTask)
 		api.POST("/agent/answer", ag.Answer)
 		api.POST("/agent/result", ag.Result)

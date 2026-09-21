@@ -264,6 +264,35 @@ func (s *Service) DeadTasks(c *gin.Context) {
 	rinfo.GinOK(c, out, "ok")
 }
 
+func (s *Service) DeadTaskAttempts(c *gin.Context) {
+	u := auth.From(c)
+	if !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要督导及以上权限")
+		return
+	}
+	sid, _ := strconv.ParseInt(c.Param("sampleId"), 10, 64)
+	var tenant int64
+	if err := s.db.QueryRow(`SELECT p.tenant_id FROM smp_sample s JOIN prj_project p ON p.id=s.project_id WHERE s.id=?`, sid).Scan(&tenant); err != nil || (!auth.HasRoleP(u, "domainAdmin") && tenant != u.TenantID) {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "样本不存在")
+		return
+	}
+	rows, err := s.db.Query(`SELECT id,task_id,call_id,reason,outcome,COALESCE(failure_code,''),COALESCE(failure_detail,''),created_at FROM cti_task_attempt WHERE sample_id=? ORDER BY created_at DESC LIMIT 100`, sid)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id, taskID, callID int64
+		var reason, outcome, code, detail, created string
+		if rows.Scan(&id, &taskID, &callID, &reason, &outcome, &code, &detail, &created) == nil {
+			out = append(out, gin.H{"id": id, "taskId": taskID, "callId": callID, "reason": reason, "outcome": outcome, "failureCode": code, "failureDetail": detail, "createdAt": created})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
 func (s *Service) RetryDeadTask(c *gin.Context) {
 	u := auth.From(c)
 	if !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
@@ -346,7 +375,7 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 			if n != 1 {
 				continue
 			}
-			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,created_at) VALUES(?,?,?,?,?,?,?)`, x.id, x.projectID, x.sampleID, x.callID, "PROCESS_RESTART", nextTaskStatus, now)
+			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,failure_code,failure_detail,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, x.id, x.projectID, x.sampleID, x.callID, "PROCESS_RESTART", nextTaskStatus, "NA", "服务重启时回收陈旧话务", now)
 			nextSampleStatus := "IDLE"
 			if x.retryCount+1 >= x.maxRetries {
 				nextSampleStatus = "DEAD"
@@ -400,7 +429,7 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 			if n != 1 {
 				continue
 			}
-			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,created_at) VALUES(?,?,?,?,?,?,?)`, x.id, x.projectID, x.sampleID, x.callID, "RETRY", nextTaskStatus, now)
+			_, _ = tx.Exec(`INSERT INTO cti_task_attempt(task_id,project_id,sample_id,call_id,reason,outcome,failure_code,failure_detail,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, x.id, x.projectID, x.sampleID, x.callID, "LEASE_EXPIRED", nextTaskStatus, "NA", "租约超时未完成", now)
 			nextSampleStatus := "IDLE"
 			if x.retryCount+1 >= x.maxRetries {
 				nextSampleStatus = "DEAD"
