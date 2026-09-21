@@ -1046,6 +1046,33 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 				connectRate = float64(connected) / float64(total)
 				abandonRate = float64(abandoned) / float64(total) * 100
 			}
+			var avgDuration, avgConnect float64
+			if drows, e := tx.Query(`SELECT begin_time,end_time,connect_time FROM cti_call_record WHERE project_id=? AND status='CLOSED' AND end_time>=?`, pid, cutoff); e == nil {
+				var durationSum, connectSum float64
+				var count, connectCount int
+				for drows.Next() {
+					var begin, end, connect string
+					if drows.Scan(&begin, &end, &connect) == nil {
+						if b, ok := parseDBTime(begin); ok {
+							if en, ok := parseDBTime(end); ok {
+								durationSum += en.Sub(b).Seconds()
+								count++
+							}
+							if cn, ok := parseDBTime(connect); ok {
+								connectSum += cn.Sub(b).Seconds()
+								connectCount++
+							}
+						}
+					}
+				}
+				drows.Close()
+				if count > 0 {
+					avgDuration = durationSum / float64(count)
+				}
+				if connectCount > 0 {
+					avgConnect = connectSum / float64(connectCount)
+				}
+			}
 			multiplier := 1.0
 			minSamples, _ := strconv.Atoi(param(tx, "predict.min.samples", "20"))
 			if total >= int64(minSamples) {
@@ -1057,6 +1084,14 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 			}
 			if abandonTarget > 0 && abandonRate < abandonTarget/2 {
 				multiplier *= 1.1
+			}
+			targetDuration, _ := strconv.ParseFloat(param(tx, "predict.avg.duration.seconds", "180"), 64)
+			targetConnect, _ := strconv.ParseFloat(param(tx, "predict.avg.connect.seconds", "20"), 64)
+			if avgDuration > targetDuration && targetDuration > 0 {
+				multiplier *= targetDuration / avgDuration
+			}
+			if avgConnect > targetConnect && targetConnect > 0 {
+				multiplier *= 0.8
 			}
 			minMultiplier, _ := strconv.ParseFloat(param(tx, "predict.multiplier.min", "0.50"), 64)
 			maxMultiplier, _ := strconv.ParseFloat(param(tx, "predict.multiplier.max", "3.00"), 64)
@@ -1139,4 +1174,13 @@ func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
 		return 0, false, err
 	}
 	return callID, callID > 0, nil
+}
+
+func parseDBTime(value string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"} {
+		if t, err := time.Parse(layout, value); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
