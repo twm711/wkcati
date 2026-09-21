@@ -80,7 +80,7 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 				continue
 			}
 		}
-		res, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls+1 WHERE id=? AND enabled=1 AND active_calls<capacity AND circuit_state IN ('CLOSED','HALF_OPEN')`, id)
+		res, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls+1,rate_window_start=?,rate_window_count=CASE WHEN rate_window_start IS NULL OR rate_window_start<? THEN 1 ELSE rate_window_count+1 END WHERE id=? AND enabled=1 AND active_calls<capacity AND circuit_state IN ('CLOSED','HALF_OPEN') AND (rate_limit_per_minute<=0 OR rate_window_start IS NULL OR rate_window_start<? OR rate_window_count<rate_limit_per_minute)`, now, cutoff, id, cutoff)
 		if err != nil {
 			return line, err
 		}
