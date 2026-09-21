@@ -277,6 +277,7 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 			ts, resultCode, callID); err != nil {
 			return err
 		}
+		_, _ = tx.Exec(`UPDATE cti_sample_task SET status='COMPLETED',completed_at=? WHERE call_id=? AND status='LEASED'`, ts, callID)
 		outData = map[string]interface{}{"sampleId": sampleID, "destination": dest}
 		if hasSheet {
 			outData["sheetStatus"] = sheetStatus

@@ -88,6 +88,7 @@ func (s *Service) ForceCheckout(c *gin.Context) {
 		n, _ := res.RowsAffected()
 		released = n
 	}
+	_, _ = s.db.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE assigned_user_id=? AND status='LEASED'`, store.NowFor(s.db.Driver), req.UserID)
 	killed := 0
 	if s.sessions != nil {
 		killed = s.sessions.LogoutAll(req.UserID)

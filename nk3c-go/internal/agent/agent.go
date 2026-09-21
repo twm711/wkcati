@@ -149,6 +149,16 @@ func (s *Service) Dispatch(c *gin.Context) {
 			return err
 		}
 		callID, _ := ins.LastInsertId()
+		queueValue := interface{}(nil)
+		if queueID.Valid {
+			queueValue = queueID.Int64
+		}
+		now := time.Now().UTC()
+		_, err = tx.Exec(`INSERT INTO cti_sample_task(project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,?,?,?,'LEASED',?,?)`,
+			projectID, sid, callID, queueValue, u.ID, store.TimeFor(s.db.Driver, now), store.TimeFor(s.db.Driver, now.Add(5*time.Minute)))
+		if err != nil {
+			return err
+		}
 		phones := []string{}
 		prows, err := tx.Query(`SELECT phone_no FROM smp_phone WHERE sample_id=? AND valid_flag=1 ORDER BY sort_no`, sid)
 		if err != nil {
