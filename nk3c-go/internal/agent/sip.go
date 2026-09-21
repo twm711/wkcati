@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	"nk3c/internal/store"
 )
@@ -127,6 +128,17 @@ func parseQ850(detail string) (interface{}, interface{}) {
 		text = t[1]
 	}
 	return cause, text
+}
+
+func resultRetryDelay(tx *sql.Tx, resultCode string) time.Duration {
+	if param(tx, "redial.backoff.enabled", "0") != "1" {
+		return 0
+	}
+	seconds, _ := strconv.Atoi(param(tx, "redial.delay."+resultCode, "300"))
+	if seconds < 0 {
+		seconds = 0
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 // ── 核心（HTTP handler 与 SIP 桥共用；BizErr=业务分支已定论、事务提交）──────────
@@ -289,7 +301,8 @@ func (s *Service) resultCore(agentID, callID int64, resultCode string) (map[stri
 				return err
 			}
 		} else {
-			if _, err := tx.Exec(`UPDATE smp_sample SET status='IDLE', attempts=attempts+1 WHERE id=?`, sampleID); err != nil {
+			nextAttemptAt := store.TimeFor(s.db.Driver, time.Now().UTC().Add(resultRetryDelay(tx, resultCode)))
+			if _, err := tx.Exec(`UPDATE smp_sample SET status='IDLE', attempts=attempts+1, next_attempt_at=? WHERE id=?`, nextAttemptAt, sampleID); err != nil {
 				return err
 			}
 		}
