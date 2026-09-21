@@ -27,8 +27,8 @@ func (s *Service) allowProject(c *gin.Context, pid string) bool {
 	if auth.HasRoleP(u, "domainAdmin") {
 		return true
 	}
-	var tenant int64
-	if err := s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, pid).Scan(&tenant); err != nil || tenant != u.TenantID {
+	var tenant, groupID int64
+	if err := s.db.QueryRow(`SELECT tenant_id,group_id FROM prj_project WHERE id=?`, pid).Scan(&tenant, &groupID); err != nil || tenant != u.TenantID || (u.GroupID > 0 && groupID > 0 && groupID != u.GroupID) {
 		rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
 		return false
 	}
@@ -43,8 +43,8 @@ func (s *Service) List(c *gin.Context) {
 		q.version,q.status FROM prj_project p LEFT JOIN qnr_questionnaire q ON q.id=p.questionnaire_id`
 	args := []interface{}{}
 	if !auth.HasRoleP(u, "domainAdmin") {
-		q += ` WHERE p.tenant_id=?`
-		args = append(args, u.TenantID)
+		q += ` WHERE p.tenant_id=? AND (p.group_id IS NULL OR p.group_id=0 OR p.group_id=?)`
+		args = append(args, u.TenantID, u.GroupID)
 	}
 	q += ` ORDER BY p.id`
 	rows, err := s.db.Query(q, args...)
@@ -102,7 +102,7 @@ func (s *Service) Create(c *gin.Context) {
 	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM prj_project`).Scan(&pid)
 	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM qnr_questionnaire`).Scan(&nid)
 	code := fmt.Sprintf("P2026-%03d", pid)
-	if _, err := s.db.Exec(`INSERT INTO prj_project(id,project_code,project_name,status,questionnaire_id,tenant_id) VALUES(?,?,?,?,?,?)`, pid, code, req.Name, "DRAFT", nid, u.TenantID); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO prj_project(id,project_code,project_name,status,questionnaire_id,tenant_id,group_id) VALUES(?,?,?,?,?,?,?)`, pid, code, req.Name, "DRAFT", nid, u.TenantID, u.GroupID); err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
 	}

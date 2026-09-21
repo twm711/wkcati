@@ -1,0 +1,25 @@
+-- +goose Up
+CREATE TABLE IF NOT EXISTS sys_org(
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  tenant_id BIGINT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status BIGINT DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS sys_group(
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  org_id BIGINT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  status BIGINT DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE sys_user ADD COLUMN org_id BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE sys_user ADD COLUMN group_id BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE prj_project ADD COLUMN group_id BIGINT NOT NULL DEFAULT 1;
+INSERT IGNORE INTO sys_org(id,tenant_id,name,status) VALUES(1,1,'默认机构',1);
+INSERT IGNORE INTO sys_group(id,org_id,name,status) VALUES(1,1,'默认坐席组',1);
+
+-- +goose Down
+ALTER TABLE prj_project DROP COLUMN group_id;
+ALTER TABLE sys_user DROP COLUMN group_id;
+ALTER TABLE sys_user DROP COLUMN org_id;
+DROP TABLE sys_group;
+DROP TABLE sys_org;

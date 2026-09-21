@@ -36,10 +36,12 @@ func (s *Service) Login(c *gin.Context) {
 		AgentNo  *string
 		Roles    string
 		TenantID int64
+		OrgID    int64
+		GroupID  int64
 	}
-	err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles,tenant_id FROM sys_user
+	err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles,tenant_id,org_id,group_id FROM sys_user
 		WHERE login_name=? AND password=? AND status=1`, req.LoginName, req.Password).
-		Scan(&u.ID, &u.UserName, &u.AgentNo, &u.Roles, &u.TenantID)
+		Scan(&u.ID, &u.UserName, &u.AgentNo, &u.Roles, &u.TenantID, &u.OrgID, &u.GroupID)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeParam, "登录名或密码错误")
 		return
@@ -72,6 +74,8 @@ type User struct {
 	Name     string
 	AgentNo  string
 	TenantID int64
+	OrgID    int64
+	GroupID  int64
 	Roles    []string
 }
 
@@ -90,8 +94,8 @@ func (s *Service) user(tok string) *User {
 	var u User
 	var roles string
 	var agentNo *string
-	if err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles,tenant_id FROM sys_user WHERE id=? AND status=1`, uid).
-		Scan(&u.ID, &u.Name, &agentNo, &roles, &u.TenantID); err != nil {
+	if err := s.db.QueryRow(`SELECT id,user_name,agent_no,roles,tenant_id,org_id,group_id FROM sys_user WHERE id=? AND status=1`, uid).
+		Scan(&u.ID, &u.Name, &agentNo, &roles, &u.TenantID, &u.OrgID, &u.GroupID); err != nil {
 		return nil
 	}
 	if agentNo != nil {
