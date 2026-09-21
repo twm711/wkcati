@@ -100,13 +100,11 @@
 
 ### P0-1：MySQL 新鲜库缺业务种子与完整可执行验证
 
-`mysql/004_seed.sql` 只插入用户和参数，SQLite 的项目、问卷、样本、状态码、IVR flow 等演示数据没有对应 MySQL seed。新鲜 MySQL 即使迁移成功也没有可运行项目和状态码。
+已新增 `mysql/038_demo_seed.sql`，以幂等 `INSERT IGNORE` 补齐项目、问卷、样本、黑名单、结果码和 IVR 演示数据；静态迁移顺序测试已覆盖该种子关键表。真实 MySQL 新鲜库执行仍待配置 `NK3C_MYSQL_DSN`，因此不能宣称上线验证完成。
 
 ### P0-2：MySQL 主键/ID 生成不闭环（已开始修复，未完成验证）
 
-原 MySQL 表的多数 `id` 没有 AUTO_INCREMENT，代码却大量省略 id 并调用 `LastInsertId()`；例如派样插入 `cti_call_record`、答卷 `ans_sheet`、QC 事件 `cti_monitor_event`。这会导致新库插入失败或得到 0 ID。
-
-本轮已将新鲜安装的 `001_init.sql` 主键改为 `AUTO_INCREMENT`，并新增 `008_production_integrity.sql` 尝试修复旧库和补齐状态码；但真实 MySQL 实例尚未执行，不能标记为完成。应用层 Snowflake 仍没有在这些写入路径接入。
+应用层主要业务写入路径已清理 `MAX(id)+1`，改为数据库自增和 `LastInsertId()`；新增 `039_generated_ids.sql` 补齐 `cti_waiting_task`、`cti_line_rate_audit`，既有 `008_production_integrity.sql` 覆盖其他主要业务表。已执行 gofmt 和 SQLite 全量 `go test ./...` 并通过。真实 MySQL 实例尚未执行：当前 `NK3C_MYSQL_DSN` 未设置，MySQL 集成测试明确 SKIP，因此 P0-2 仍不能标记为上线完成。
 
 ### P0-3：MySQL 字段长度不适合真实数据
 
