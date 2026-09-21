@@ -329,3 +329,34 @@ func (s *Service) UpsertLine(c *gin.Context) {
 	}
 	rinfo.GinOK(c, gin.H{"id": id}, "线路已保存")
 }
+
+// LineCircuitEvents 查询线路熔断状态变化时间线。
+func (s *Service) LineCircuitEvents(c *gin.Context) {
+	u := auth.From(c)
+	if u == nil || !auth.HasRoleP(u, "groupAdmin", "orgAdmin", "domainAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要管理权限")
+		return
+	}
+	q := `SELECT e.id,e.line_id,l.line_no,e.call_id,e.from_state,e.to_state,e.reason,e.created_at FROM cti_line_circuit_event e JOIN cti_outbound_line l ON l.id=e.line_id`
+	args := []interface{}{}
+	if !auth.HasRoleP(u, "domainAdmin") {
+		q += ` WHERE l.tenant_id=?`
+		args = append(args, u.TenantID)
+	}
+	q += ` ORDER BY e.created_at DESC LIMIT 200`
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id, lineID, callID int64
+		var lineNo, from, to, reason, created string
+		if rows.Scan(&id, &lineID, &lineNo, &callID, &from, &to, &reason, &created) == nil {
+			out = append(out, gin.H{"id": id, "lineId": lineID, "lineNo": lineNo, "callId": callID, "fromState": from, "toState": to, "reason": reason, "createdAt": created})
+		}
+	}
+	rinfo.GinOK(c, out, "ok")
+}

@@ -111,6 +111,7 @@ func Build(db *store.DB) *App {
 		api.GET("/monitor/calls", mo.Calls)
 		api.GET("/monitor/line-health", mo.LineHealth)
 		api.GET("/monitor/lines", mo.Lines)
+		api.GET("/monitor/line-events", mo.LineCircuitEvents)
 		api.POST("/monitor/lines", mo.UpsertLine)
 		api.POST("/monitor/control", mo.Control)
 		api.GET("/monitor/control/capabilities", mo.Capabilities)
