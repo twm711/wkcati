@@ -218,6 +218,42 @@ func (s *Service) Dispatch(c *gin.Context) {
 	}
 }
 
+// ReapExpiredTasks safely returns lease-expired tasks to the sample pool.
+// It is idempotent and may be called by a periodic worker.
+func (s *Service) ReapExpiredTasks() (int64, error) {
+	now := store.NowFor(s.db.Driver)
+	var reclaimed int64
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT id,sample_id,call_id FROM cti_sample_task WHERE status='LEASED' AND lease_until<?`, now)
+		if err != nil {
+			return err
+		}
+		type task struct{ id, sampleID, callID int64 }
+		var tasks []task
+		for rows.Next() {
+			var x task
+			if err := rows.Scan(&x.id, &x.sampleID, &x.callID); err != nil {
+				rows.Close()
+				return err
+			}
+			tasks = append(tasks, x)
+		}
+		rows.Close()
+		for _, x := range tasks {
+			if _, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE id=? AND status='LEASED'`, now, x.id); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, x.sampleID); err != nil {
+				return err
+			}
+			_, _ = tx.Exec(`UPDATE cti_call_record SET status='CLOSED',end_time=?,result_code='NA' WHERE id=? AND status='DIALING' AND (result_code IS NULL OR result_code='')`, now, x.callID)
+			reclaimed++
+		}
+		return nil
+	})
+	return reclaimed, err
+}
+
 var errAbort = store.ErrAbort
 
 func mnSafe(v sql.NullFloat64) interface{} {

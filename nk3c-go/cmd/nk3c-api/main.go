@@ -48,6 +48,26 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Lease reaper: expired queue tasks must not strand samples after a
+	// browser/SIP disconnect. It is deliberately independent of the HTTP loop.
+	leaseAgent := agent.New(db)
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if n, err := leaseAgent.ReapExpiredTasks(); err != nil {
+					log.Printf("[任务租约] 回收失败: %v", err)
+				} else if n > 0 {
+					log.Printf("[任务租约] 已回收 %d 个过期任务", n)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	// 话务域：真实 SIP 呼入 → IVR 核心引擎 → 工单/话务落库（与网页模拟同一走线）
 	if *sipAddr != "" {
 		host, portS, _ := net.SplitHostPort(*sipAddr)
