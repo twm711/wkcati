@@ -32,10 +32,14 @@ func New(db *store.DB) *Service {
 }
 
 func (s *Service) acquireWorkerLease() (bool, error) {
+	return s.acquireWorkerLeaseNamed("sample-task-reaper")
+}
+
+func (s *Service) acquireWorkerLeaseNamed(name string) (bool, error) {
 	now := time.Now().UTC()
 	nowText := store.TimeFor(s.db.Driver, now)
 	untilText := store.TimeFor(s.db.Driver, now.Add(25*time.Second))
-	res, err := s.db.Exec(`UPDATE cti_worker_lock SET owner=?,lease_until=? WHERE name='sample-task-reaper' AND (lease_until<? OR owner=?)`, s.workerID, untilText, nowText, s.workerID)
+	res, err := s.db.Exec(`UPDATE cti_worker_lock SET owner=?,lease_until=? WHERE name=? AND (lease_until<? OR owner=?)`, s.workerID, untilText, name, nowText, s.workerID)
 	if err != nil {
 		return false, err
 	}
@@ -761,8 +765,12 @@ func (s *Service) Audit(c *gin.Context) {
 
 // ProcessWaitingTasks 自动为有空闲容量的等待任务分配样本。
 func (s *Service) ProcessWaitingTasks() (int64, error) {
+	ok, err := s.acquireWorkerLeaseNamed("waiting-task-dispatch")
+	if err != nil || !ok {
+		return 0, err
+	}
 	var assigned int64
-	err := s.db.Tx(func(tx *sql.Tx) error {
+	err = s.db.Tx(func(tx *sql.Tx) error {
 		rows, err := tx.Query(`SELECT w.id,w.project_id,w.queue_id,w.agent_id,u.agent_no
 			FROM cti_waiting_task w JOIN sys_user u ON u.id=w.agent_id
 			WHERE w.status='WAITING' ORDER BY w.priority,w.created_at LIMIT 50`)
@@ -817,6 +825,9 @@ func (s *Service) ProcessWaitingTasks() (int64, error) {
 				return err
 			}
 			assigned++
+			if s.notifier != nil {
+				s.notifier.Publish("WAITING_ASSIGNED", map[string]interface{}{"callId": callID, "sampleId": sampleID, "agentId": w.agentID, "queueId": w.queueID})
+			}
 		}
 		return nil
 	})
