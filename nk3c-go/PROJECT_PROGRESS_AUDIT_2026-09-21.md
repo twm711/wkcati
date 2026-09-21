@@ -203,3 +203,5 @@
 扩展真实 SIP 486 + 数据库线路 E2E 断言：确认实际 caller_no 回写为 line-486、线路 failure_streak=1、circuit_state=CLOSED、active_calls=0，话务结果为 CLOSED/BUSY；线路健康度反馈已由真实 SIP 失败驱动。
 
 扩展真实 SIP 486 线路 E2E 为连续 5 次失败：同一数据库线路最终 `failure_streak=5`、`circuit_state=OPEN`、`active_calls=0`，证明真实 SIP 失败可以推动线路熔断阈值；OPEN 后自动拨号拒绝路径的任务收尾仍需单独补测。
+
+新增真实 HALF_OPEN 失败 E2E：将 OPEN 线路 opened_until 调至过去后再次返回 486，确认探测进入 HALF_OPEN、失败后重新 OPEN 且 failure_streak=6。期间修复线路选择 bug：严重失败率过滤不能阻断已到期 OPEN 线路的单探测。
