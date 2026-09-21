@@ -13,8 +13,9 @@ import (
 )
 
 type eventClient struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn     *websocket.Conn
+	send     chan []byte
+	tenantID int64
 }
 
 // EventHub 事件驱动广播（与墙式 Hub 互补：无周期帧，事件到达即推）
@@ -34,13 +35,17 @@ func NewEventHub() *EventHub {
 }
 
 // ServeWS 升级并挂载一个督导客户端（阻塞；断开自动清理）
-func (h *EventHub) ServeWS(w http.ResponseWriter, r *http.Request) {
+func (h *EventHub) ServeWS(w http.ResponseWriter, r *http.Request, tenantIDs ...int64) {
+	tenantID := int64(0)
+	if len(tenantIDs) > 0 {
+		tenantID = tenantIDs[0]
+	}
 	c, err := h.upg.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Warn("质检 WS 升级失败", "err", err)
 		return
 	}
-	cl := &eventClient{conn: c, send: make(chan []byte, 32)}
+	cl := &eventClient{conn: c, send: make(chan []byte, 32), tenantID: tenantID}
 	h.mu.Lock()
 	h.clients[cl] = struct{}{}
 	n := len(h.clients)
@@ -91,9 +96,13 @@ func (h *EventHub) Publish(event string, data map[string]interface{}) {
 	if err != nil {
 		return
 	}
+	tenantID, _ := data["tenantId"].(int64)
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for cl := range h.clients {
+		if cl.tenantID > 0 && tenantID != cl.tenantID {
+			continue
+		}
 		select {
 		case cl.send <- b:
 		default: // 背压丢弃（督导端断线由读泵感知清理）

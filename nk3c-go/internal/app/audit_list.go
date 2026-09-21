@@ -23,11 +23,19 @@ func auditList(db *store.DB) gin.HandlerFunc {
 				limit = n
 			}
 		}
-		q := `SELECT id,user_id,login_name,method,path,action,status_code,created_at FROM sys_op_log`
+		q := `SELECT id,user_id,login_name,tenant_id,method,path,action,status_code,created_at FROM sys_op_log`
 		args := []interface{}{}
 		where := ""
+		if !auth.HasRoleP(u, "domainAdmin") {
+			where = " WHERE tenant_id=?"
+			args = append(args, u.TenantID)
+		}
 		if method := c.Query("method"); method != "" {
-			where = " WHERE method=?"
+			if where == "" {
+				where = " WHERE method=?"
+			} else {
+				where += " AND method=?"
+			}
 			args = append(args, method)
 		}
 		q += where + ` ORDER BY created_at DESC LIMIT ` + strconv.Itoa(limit)
@@ -40,12 +48,12 @@ func auditList(db *store.DB) gin.HandlerFunc {
 		out := []map[string]interface{}{}
 		for rows.Next() {
 			var id, login, method, path, action, created string
-			var uid int64
+			var uid, tenantID int64
 			var status int
-			if err := rows.Scan(&id, &uid, &login, &method, &path, &action, &status, &created); err != nil {
+			if err := rows.Scan(&id, &uid, &login, &tenantID, &method, &path, &action, &status, &created); err != nil {
 				continue
 			}
-			out = append(out, map[string]interface{}{"id": id, "userId": uid, "userName": login,
+			out = append(out, map[string]interface{}{"id": id, "userId": uid, "userName": login, "tenantId": tenantID,
 				"method": method, "path": path, "action": action, "statusCode": status, "createdAt": created})
 		}
 		rinfo.GinOK(c, gin.H{"total": len(out), "rows": out}, "ok")

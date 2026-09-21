@@ -51,7 +51,11 @@ func (s *Service) ServeQCWS(c *gin.Context) {
 		c.AbortWithStatus(403)
 		return
 	}
-	s.qcHub.ServeWS(c.Writer, c.Request)
+	tenantID := int64(0)
+	if !auth.HasRoleP(u, "domainAdmin") {
+		tenantID = u.TenantID
+	}
+	s.qcHub.ServeWS(c.Writer, c.Request, tenantID)
 }
 
 type forceCheckoutReq struct {
@@ -89,7 +93,7 @@ func (s *Service) ForceCheckout(c *gin.Context) {
 		killed = s.sessions.LogoutAll(req.UserID)
 	}
 	s.qcHub.Publish("FORCE_LOGOUT", gin.H{"targetUserId": req.UserID, "targetAgentNo": agentNo,
-		"releasedSamples": released, "sessions": killed, "byUserId": op.ID, "byAgentNo": op.AgentNo})
+		"releasedSamples": released, "sessions": killed, "byUserId": op.ID, "byAgentNo": op.AgentNo, "tenantId": op.TenantID})
 	rinfo.GinOK(c, gin.H{"sessions": killed, "releasedSamples": released}, "已强签 "+agentNo)
 }
 

@@ -44,7 +44,7 @@ func (s *Service) Control(c *gin.Context) {
 			return
 		}
 		if s.qcHub != nil {
-			s.qcHub.Publish(req.Action, gin.H{"userId": req.UserID, "byUserId": u.ID})
+			s.qcHub.Publish(req.Action, gin.H{"userId": req.UserID, "byUserId": u.ID, "tenantId": u.TenantID})
 		}
 		rinfo.GinOK(c, gin.H{"userId": req.UserID, "state": state}, "坐席状态已强制更新")
 		return
@@ -60,7 +60,7 @@ func (s *Service) Control(c *gin.Context) {
 		}
 		s.msgHub.Publish(req.UserID, req.Text, u.ID)
 		if s.qcHub != nil {
-			s.qcHub.Publish("MESSAGE", gin.H{"userId": req.UserID, "byUserId": u.ID})
+			s.qcHub.Publish("MESSAGE", gin.H{"userId": req.UserID, "byUserId": u.ID, "tenantId": u.TenantID})
 		}
 		rinfo.GinOK(c, gin.H{"userId": req.UserID}, "消息已发送")
 		return
@@ -92,7 +92,7 @@ func (s *Service) Control(c *gin.Context) {
 			}
 		}
 		if s.qcHub != nil {
-			s.qcHub.Publish(req.Action, gin.H{"callId": req.CallID, "supervisorUri": req.SupervisorURI, "byUserId": u.ID})
+			s.qcHub.Publish(req.Action, gin.H{"callId": req.CallID, "supervisorUri": req.SupervisorURI, "byUserId": u.ID, "tenantId": u.TenantID})
 		}
 		msg := "督导已加入三方通话"
 		if listenOnly {
@@ -118,7 +118,7 @@ func (s *Service) Control(c *gin.Context) {
 		return
 	}
 	if s.qcHub != nil {
-		s.qcHub.Publish("HANGUP", gin.H{"callId": req.CallID, "byUserId": u.ID, "byAgentNo": u.AgentNo})
+		s.qcHub.Publish("HANGUP", gin.H{"callId": req.CallID, "byUserId": u.ID, "byAgentNo": u.AgentNo, "tenantId": u.TenantID})
 	}
 	rinfo.GinOK(c, gin.H{"callId": req.CallID, "action": req.Action}, "已发送强制挂断")
 }

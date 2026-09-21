@@ -35,7 +35,7 @@ func auditMiddleware(db *store.DB) gin.HandlerFunc {
 			created = time.Now().UTC().Format("2006-01-02 15:04:05")
 		}
 		// 审计失败不能覆盖原业务响应；失败由数据库/运行日志另行暴露。
-		_, _ = db.Exec(`INSERT INTO sys_op_log(id,user_id,login_name,method,path,action,status_code,created_at)
-			VALUES(?,?,?,?,?,?,?,?)`, id, u.ID, u.Name, method, c.Request.URL.Path, method+" "+c.Request.URL.Path, c.Writer.Status(), created)
+		_, _ = db.Exec(`INSERT INTO sys_op_log(id,user_id,login_name,tenant_id,method,path,action,status_code,created_at)
+			VALUES(?,?,?,?,?,?,?,?,?)`, id, u.ID, u.Name, u.TenantID, method, c.Request.URL.Path, method+" "+c.Request.URL.Path, c.Writer.Status(), created)
 	}
 }

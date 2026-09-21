@@ -35,10 +35,11 @@ func (s *Service) publishQC(u *auth.User, event string, callID, sampleID int64, 
 	if s.notifier == nil {
 		return
 	}
-	data := map[string]interface{}{"agentNo": "", "userId": int64(0)}
+	data := map[string]interface{}{"agentNo": "", "userId": int64(0), "tenantId": int64(0)}
 	if u != nil {
 		data["agentNo"] = u.AgentNo
 		data["userId"] = u.ID
+		data["tenantId"] = u.TenantID
 	}
 	if callID != 0 {
 		data["callId"] = callID
@@ -52,8 +53,12 @@ func (s *Service) publishQC(u *auth.User, event string, callID, sampleID int64, 
 	for k, v := range extra {
 		data[k] = v
 	}
-	_, _ = s.db.Exec(`INSERT INTO cti_monitor_event(agent_id,agent_no,event,call_id,sample_id,detail,created_at)
-		VALUES(?,?,?,?,?,?,?)`, data["userId"], data["agentNo"], event, callID, sampleID, detail, store.NowISO())
+	tenantID := int64(0)
+	if u != nil {
+		tenantID = u.TenantID
+	}
+	_, _ = s.db.Exec(`INSERT INTO cti_monitor_event(agent_id,agent_no,tenant_id,event,call_id,sample_id,detail,created_at)
+		VALUES(?,?,?,?,?,?,?,?)`, data["userId"], data["agentNo"], tenantID, event, callID, sampleID, detail, store.NowISO())
 	s.notifier.Publish(event, data)
 }
 
@@ -367,7 +372,14 @@ func (s *Service) Audit(c *gin.Context) {
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var status string
 		var sampleID int64
-		if err := tx.QueryRow(`SELECT status,sample_id FROM ans_sheet WHERE id=?`, sheetID).Scan(&status, &sampleID); err != nil {
+		q := `SELECT s.status,s.sample_id,p.tenant_id FROM ans_sheet s JOIN prj_project p ON p.id=s.project_id WHERE s.id=?`
+		args := []interface{}{sheetID}
+		if !auth.HasRoleP(u, "domainAdmin") {
+			q += ` AND p.tenant_id=?`
+			args = append(args, u.TenantID)
+		}
+		var tenantID int64
+		if err := tx.QueryRow(q, args...).Scan(&status, &sampleID, &tenantID); err != nil {
 			rinfo.GinFail(c, rinfo.CodeNotFound, "答卷不存在")
 			return errAbort
 		}

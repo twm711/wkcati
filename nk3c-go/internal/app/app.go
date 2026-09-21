@@ -287,13 +287,24 @@ func (a *App) RegisterDial(o *media.OutboundCaller, bd media.BridgeDriver) {
 
 func sheetList(db *store.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		q := `SELECT id,call_id,project_id,sample_id,agent_id,qnr_id,qnr_version,status,audit_remark FROM ans_sheet`
+		u := auth.From(c)
+		q := `SELECT s.id,s.call_id,s.project_id,s.sample_id,s.agent_id,s.qnr_id,s.qnr_version,s.status,s.audit_remark FROM ans_sheet s JOIN prj_project p ON p.id=s.project_id`
 		args := []interface{}{}
+		where := ""
+		if !auth.HasRoleP(u, "domainAdmin") {
+			where = ` WHERE p.tenant_id=?`
+			args = append(args, u.TenantID)
+		}
 		if st := c.Query("status"); st != "" {
-			q += ` WHERE status=?`
+			if where == "" {
+				where = ` WHERE s.status=?`
+			} else {
+				where += ` AND s.status=?`
+			}
 			args = append(args, st)
 		}
-		q += ` ORDER BY id DESC`
+		q += where
+		q += ` ORDER BY s.id DESC`
 		rows, err := db.Query(q, args...)
 		if err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
