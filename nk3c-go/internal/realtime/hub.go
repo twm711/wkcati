@@ -12,10 +12,11 @@ import (
 )
 
 // PayloadFn 当前墙面快照（复用 monitor 查询逻辑）
-type PayloadFn func() map[string]interface{}
+type PayloadFn func(tenantID int64) map[string]interface{}
 
 type client struct {
-	conn *websocket.Conn
+	conn     *websocket.Conn
+	tenantID int64
 }
 
 // Hub 客户端注册表 + 2s 周期广播
@@ -37,13 +38,17 @@ func NewHub(payload PayloadFn) *Hub {
 }
 
 // ServeWS 升级并挂载一个客户端（阻塞；断开自动清理）
-func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
+func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request, tenantIDs ...int64) {
+	tenantID := int64(0)
+	if len(tenantIDs) > 0 {
+		tenantID = tenantIDs[0]
+	}
 	c, err := h.upg.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Warn("WS 升级失败", "err", err)
 		return
 	}
-	cl := &client{conn: c}
+	cl := &client{conn: c, tenantID: tenantID}
 	h.mu.Lock()
 	h.clients[cl] = struct{}{}
 	n := len(h.clients)
@@ -68,7 +73,7 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 	tick := time.NewTicker(2 * time.Second)
 	defer tick.Stop()
 	push := func() bool {
-		b, err := json.Marshal(map[string]interface{}{"type": "wall", "data": h.payload(), "ts": time.Now().UnixMilli()})
+		b, err := json.Marshal(map[string]interface{}{"type": "wall", "data": h.payload(cl.tenantID), "ts": time.Now().UnixMilli()})
 		if err != nil {
 			return true
 		}
@@ -87,4 +92,3 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-

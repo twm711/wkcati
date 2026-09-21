@@ -153,9 +153,14 @@ func Build(db *store.DB) *App {
 	mo.WireMessage(msgHub)
 
 	// 监控墙 WebSocket（?token= 鉴权；2s 推送墙面快照）
-	hub := realtime.NewHub(mo.BuildWall)
+	hub := realtime.NewHub(mo.BuildWallFor)
 	e.GET("/api/ws/monitor", a.AuthQuery(), func(c *gin.Context) {
-		hub.ServeWS(c.Writer, c.Request)
+		u := auth.From(c)
+		tenantID := int64(0)
+		if !auth.HasRoleP(u, "domainAdmin") {
+			tenantID = u.TenantID
+		}
+		hub.ServeWS(c.Writer, c.Request, tenantID)
 	})
 	// 质检 WS（仅 groupAdmin；鉴权后角色校验 403 不升级）
 	e.GET("/api/qc/ws", a.AuthQuery(), mo.ServeQCWS)
