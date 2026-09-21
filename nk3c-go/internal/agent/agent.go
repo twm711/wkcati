@@ -1016,3 +1016,58 @@ func (s *Service) SkipPreview(c *gin.Context) {
 	_, _ = s.db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status='PREVIEW'`, sampleID)
 	rinfo.GinOK(c, nil, "已跳过预览样本")
 }
+
+// ClaimProgressiveTask 原子领取一个渐进拨号任务；媒体域负责随后实际发起 SIP 外呼。
+func (s *Service) ClaimProgressiveTask() (int64, bool, error) {
+	var callID int64
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		var pid, maxConcurrent int64
+		if err := tx.QueryRow(`SELECT d.project_id,d.max_concurrent FROM cti_dial_strategy d JOIN prj_project p ON p.id=d.project_id WHERE d.enabled=1 AND d.mode='PROGRESSIVE' AND p.status='RUNNING' ORDER BY d.project_id LIMIT 1`).Scan(&pid, &maxConcurrent); err != nil {
+			return err
+		}
+		var active int64
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE project_id=? AND status='LEASED'`, pid).Scan(&active)
+		if active >= maxConcurrent {
+			return errAbort
+		}
+		var agentID, queueID int64
+		var agentNo string
+		if err := tx.QueryRow(`SELECT aq.user_id,u.agent_no,aq.queue_id FROM cti_agent_queue aq JOIN cti_agent_state st ON st.user_id=aq.user_id AND st.state='READY' JOIN sys_user u ON u.id=aq.user_id JOIN prj_queue pq ON pq.queue_id=aq.queue_id WHERE pq.project_id=? AND aq.enabled=1 ORDER BY aq.user_id LIMIT 1`, pid).Scan(&agentID, &agentNo, &queueID); err != nil {
+			return err
+		}
+		var cap, agentActive int64
+		_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=?`, agentID, queueID).Scan(&cap)
+		_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE assigned_user_id=? AND queue_id=? AND status='LEASED'`, agentID, queueID).Scan(&agentActive)
+		if cap > 0 && agentActive >= cap {
+			return errAbort
+		}
+		var sid int64
+		var phone string
+		now := store.NowFor(s.db.Driver)
+		if err := tx.QueryRow(`SELECT s.id,p.phone_no FROM smp_sample s JOIN smp_phone p ON p.sample_id=s.id AND p.valid_flag=1 WHERE s.project_id=? AND s.status='IDLE' AND (s.next_attempt_at IS NULL OR s.next_attempt_at<=?) ORDER BY s.shuffle_key LIMIT 1`, pid, now).Scan(&sid, &phone); err != nil {
+			return err
+		}
+		res, err := tx.Exec(`UPDATE smp_sample SET status='ASSIGNED',owner_agent_id=? WHERE id=? AND status='IDLE'`, agentID, sid)
+		if err != nil {
+			return err
+		}
+		n, _ := res.RowsAffected()
+		if n != 1 {
+			return errAbort
+		}
+		ins, err := tx.Exec(`INSERT INTO cti_call_record(project_id,sample_id,agent_id,agent_no,caller_no,called_no,status,begin_time) VALUES(?,?,?,?,?,?,'DIALING',?)`, pid, sid, agentID, agentNo, "95533", phone, now)
+		if err != nil {
+			return err
+		}
+		callID, _ = ins.LastInsertId()
+		_, err = tx.Exec(`INSERT INTO cti_sample_task(project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,?,?,?,'LEASED',?,?)`, pid, sid, callID, queueID, agentID, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(5*time.Minute)))
+		return err
+	})
+	if err == errAbort {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return callID, callID > 0, nil
+}

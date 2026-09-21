@@ -117,7 +117,28 @@ func main() {
 				srv.Outbound.OnRecorded = func(callID int64, path string) {
 					_, _ = db.Exec(`UPDATE cti_call_record SET record_file=? WHERE id=?`, path, callID)
 				}
-				a.RegisterDial(srv.Outbound, agent.New(db))
+				dialAgent := agent.New(db)
+				a.RegisterDial(srv.Outbound, dialAgent)
+				go func() {
+					ticker := time.NewTicker(2 * time.Second)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-ticker.C:
+							if callID, ok, err := dialAgent.ClaimProgressiveTask(); err != nil {
+								log.Printf("[渐进拨号] 领取任务失败: %v", err)
+							} else if ok {
+								go func(id int64) {
+									if _, _, e := srv.Outbound.Dial(ctx, id); e != nil {
+										log.Printf("[渐进拨号] 外呼失败 call=%d: %v", id, e)
+									}
+								}(callID)
+							}
+						case <-ctx.Done():
+							return
+						}
+					}
+				}()
 				log.Printf("外呼腿已挂载：路由 %s:%d（POST /api/agent/calls/:callId/dial）", ph, pn)
 			}()
 		}
