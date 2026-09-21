@@ -242,6 +242,30 @@ func (s *Service) RenewTask(c *gin.Context) {
 	rinfo.GinOK(c, gin.H{"callId": req.CallID, "leaseSeconds": 300}, "任务租约已续期")
 }
 
+// RecoverStaleTasks reconciles leases left by a previous process. SIP legs are
+// in-memory, so a DIALING call cannot survive a process restart safely.
+func (s *Service) RecoverStaleTasks() (int64, error) {
+	now := store.NowFor(s.db.Driver)
+	var recovered int64
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT t.id,t.sample_id,t.call_id FROM cti_sample_task t JOIN cti_call_record c ON c.id=t.call_id WHERE t.status='LEASED' AND c.status='DIALING'`)
+		if err != nil { return err }
+		type task struct { id, sampleID, callID int64 }
+		var tasks []task
+		for rows.Next() { var x task; if err:=rows.Scan(&x.id,&x.sampleID,&x.callID); err!=nil { rows.Close(); return err }; tasks=append(tasks,x) }
+		rows.Close()
+		for _, x := range tasks {
+			res, err := tx.Exec(`UPDATE cti_sample_task SET status='EXPIRED',completed_at=? WHERE id=? AND status='LEASED'`, now, x.id)
+			if err != nil { return err }; n,_:=res.RowsAffected(); if n!=1 { continue }
+			_, _ = tx.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, x.sampleID)
+			_, _ = tx.Exec(`UPDATE cti_call_record SET status='CLOSED',end_time=?,result_code='NA' WHERE id=? AND status='DIALING'`, now, x.callID)
+			recovered++
+		}
+		return nil
+	})
+	return recovered, err
+}
+
 // ReapExpiredTasks safely returns lease-expired tasks to the sample pool.
 // It is idempotent and may be called by a periodic worker.
 func (s *Service) ReapExpiredTasks() (int64, error) {

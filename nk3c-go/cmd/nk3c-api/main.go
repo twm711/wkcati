@@ -51,6 +51,11 @@ func main() {
 	// Lease reaper: expired queue tasks must not strand samples after a
 	// browser/SIP disconnect. It is deliberately independent of the HTTP loop.
 	leaseAgent := agent.New(db)
+	if n, err := leaseAgent.RecoverStaleTasks(); err != nil {
+		log.Printf("[任务租约] 启动陈旧话务恢复失败: %v", err)
+	} else if n > 0 {
+		log.Printf("[任务租约] 启动已恢复 %d 个陈旧话务任务", n)
+	}
 	if n, err := leaseAgent.ReapExpiredTasks(); err != nil {
 		log.Printf("[任务租约] 启动恢复失败: %v", err)
 	} else if n > 0 {
