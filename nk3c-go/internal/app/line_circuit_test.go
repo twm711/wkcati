@@ -17,7 +17,7 @@ func TestHalfOpenLineAllowsSingleProbe(t *testing.T) {
 	var mu sync.Mutex
 	successes := 0
 	var held []agent.OutboundLine
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

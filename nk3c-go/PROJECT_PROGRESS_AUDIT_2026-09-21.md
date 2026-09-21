@@ -209,3 +209,5 @@
 新增 `TestHalfOpenSuccessfulResultClosesCircuit`：模拟 OPEN 线路到期后的成功结果收尾，验证 SUCCESS 会将 circuit_state 恢复 CLOSED、failure_streak 清零；这是业务收尾测试，真实 SIP 200 OK + 完整问卷成功恢复 E2E 仍待补齐。
 
 扩展真实自动调研成功 E2E：数据库线路初始为 OPEN 且 opened_until 已到期，成功完成真实 SIP 问卷后确认线路恢复 CLOSED、failure_streak=0、active_calls=0；半开成功恢复已具备真实 SIP 200 OK/问卷闭环证据。
+
+将 HALF_OPEN 单探测竞争测试从 2 个并发领取者扩展到 8 个，并以 `-count=10` 重复执行，均严格只成功 1 个探测；这是数据库原子竞争证据，尚不等同于 MySQL 多进程真实压测。
