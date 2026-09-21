@@ -36,6 +36,9 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO cti_dial_strategy(project_id,mode,max_concurrent,abandon_target,enabled,updated_at,current_multiplier,last_sample_count) VALUES(?,?,?, ?,?,?,?,?)`, pid, "PREDICTIVE", 2, 3, 1, time.Now(), 0.5, 0); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO sys_param(param_code,param_value) VALUES('predict.multiplier.max','0.60') ON DUPLICATE KEY UPDATE param_value='0.60'`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO cti_queue(id,tenant_id,org_id,group_id,name,status) VALUES(?,?,?,?,?,1)`, qid, 1, 1, 1, "mysql-claim"); err != nil {
 		t.Fatal(err)
 	}
@@ -55,13 +58,13 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := int64(0); i < 20; i++ {
-		result := "BUSY"
+		result := "SUCCESS"
 		if i < 10 {
 			result = "SUCCESS"
 		} else {
-			result = "BREAKOFF"
+			result = "SUCCESS"
 		}
-		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,status,result_code,begin_time,connect_time,end_time) VALUES(?,?,?, ?,?,?,?)`, 998100+i, pid, "CLOSED", result, time.Now().UTC().Add(-1000*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Add(-2*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute)); err != nil {
+		if _, err := db.Exec(`INSERT INTO cti_call_record(id,project_id,status,result_code,begin_time,connect_time,end_time) VALUES(?,?,?, ?,?,?,?)`, 998100+i, pid, "CLOSED", result, time.Now().UTC().Add(-time.Duration(i+1)*time.Minute), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Add(2*time.Second), time.Now().UTC().Add(-time.Duration(i+1)*time.Minute)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -90,7 +93,7 @@ func TestMySQLClaimProgressiveTaskConcurrent(t *testing.T) {
 	if err := db.QueryRow(`SELECT current_multiplier,last_sample_count FROM cti_dial_strategy WHERE project_id=?`, pid).Scan(&multiplier, &samples); err != nil {
 		t.Fatal(err)
 	}
-	if multiplier < 0.499 || multiplier > 0.501 || samples != 20 {
-		t.Fatalf("expected predictive multiplier floor 0.50/20 under extreme loss and duration, got %v/%d", multiplier, samples)
+	if multiplier < 0.599 || multiplier > 0.601 || samples != 20 {
+		t.Fatalf("expected predictive multiplier ceiling 0.60/20 under configured max, got %v/%d", multiplier, samples)
 	}
 }
