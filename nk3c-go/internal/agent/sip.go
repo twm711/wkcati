@@ -46,6 +46,44 @@ type OutboundCall struct {
 	Questions []OutboundQuestion
 }
 
+type OutboundLine struct {
+	ID     int64
+	LineNo string
+	Host   string
+	Port   int
+}
+
+// ReserveOutboundLine 按优先级和剩余容量原子占用线路。
+func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
+	var line OutboundLine
+	var tenant int64
+	if err := s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=(SELECT project_id FROM cti_call_record WHERE id=?)`, callID).Scan(&tenant); err != nil {
+		return line, err
+	}
+	for i := 0; i < 8; i++ {
+		var id int64
+		var no, host string
+		var port int
+		err := s.db.QueryRow(`SELECT id,line_no,COALESCE(host,''),port FROM cti_outbound_line WHERE tenant_id=? AND enabled=1 AND active_calls<capacity ORDER BY priority,id LIMIT 1`, tenant).Scan(&id, &no, &host, &port)
+		if err != nil {
+			return line, err
+		}
+		res, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=active_calls+1 WHERE id=? AND enabled=1 AND active_calls<capacity`, id)
+		if err != nil {
+			return line, err
+		}
+		if n, _ := res.RowsAffected(); n == 1 {
+			return OutboundLine{ID: id, LineNo: no, Host: host, Port: port}, nil
+		}
+	}
+	return line, fmt.Errorf("外呼线路容量竞争失败")
+}
+
+func (s *Service) ReleaseOutboundLine(id int64) error {
+	_, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, id)
+	return err
+}
+
 // LoadOutbound 装载外呼任务（话务须处于 DIALING）
 func (s *Service) LoadOutbound(callID int64) (OutboundCall, error) {
 	oc := OutboundCall{CallID: callID, CallerID: "95533"}

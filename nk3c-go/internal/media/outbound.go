@@ -46,10 +46,23 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 	if o.dg == nil {
 		return nil, "", fmt.Errorf("话务域未启动（--sip-addr）")
 	}
+	task, err := o.Driver.LoadOutbound(callID)
+	if err != nil {
+		return nil, "", err
+	}
+	var lineID int64
+	if selector, ok := o.Driver.(interface {
+		ReserveOutboundLine(int64) (agent.OutboundLine, error)
+		ReleaseOutboundLine(int64) error
+	}); ok {
+		if line, reserveErr := selector.ReserveOutboundLine(callID); reserveErr == nil {
+			lineID, task.CallerID, o.PeerHost, o.PeerPort = line.ID, line.LineNo, line.Host, line.Port
+			defer func() { _ = selector.ReleaseOutboundLine(lineID) }()
+		}
+	}
 	if o.PeerHost == "" || o.PeerPort == 0 {
 		return nil, "", fmt.Errorf("未配置外呼路由（--outbound host:port）")
 	}
-	task, err := o.Driver.LoadOutbound(callID)
 	if err != nil {
 		return nil, "", err
 	}
