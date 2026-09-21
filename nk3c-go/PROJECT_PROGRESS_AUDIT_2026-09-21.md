@@ -215,3 +215,5 @@
 当前沙箱无 `mysql`/`mysqld` 服务，未宣称真实 MySQL 迁移完成；新增 `TestMySQLMigrationsAreOrderedAndHaveGooseSections`，静态检查 MySQL 迁移版本唯一、Goose Up/Down 完整且不含 SQLite `INSERT OR IGNORE`，真实 MySQL 执行仍待上线环境验证。
 
 新增可选 MySQL 集成测试 `internal/store/mysql_integration_test.go` 和脚本 `scripts/mysql-integration-test.sh`：设置 `NK3C_MYSQL_DSN` 后执行真实迁移及关键字段查询；当前沙箱因未设置 DSN 仅显示 SKIP，未宣称真实 MySQL 已验证。
+
+扩展可选 MySQL 集成测试：`TestMySQLLineRateBucketConcurrentUpdate` 通过 16 个 goroutine/数据库连接竞争同一线路分钟桶，期望原子更新严格成功 2 次；当前无 `NK3C_MYSQL_DSN`，测试仅 SKIP，真实 MySQL 结果待外部环境执行。
