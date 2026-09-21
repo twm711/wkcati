@@ -102,14 +102,25 @@ func (s *Service) Create(c *gin.Context) {
 	var pid, nid int64
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		qres, err := tx.Exec(`INSERT INTO qnr_questionnaire(title,version,status) VALUES(?,?,'DRAFT')`, req.Name, "Draft")
-		if err != nil { return err }
-		nid, err = qres.LastInsertId(); if err != nil { return err }
+		if err != nil {
+			return err
+		}
+		nid, err = qres.LastInsertId()
+		if err != nil {
+			return err
+		}
 		code := fmt.Sprintf("P2026-%03d", nid)
 		pres, err := tx.Exec(`INSERT INTO prj_project(project_code,project_name,status,questionnaire_id,tenant_id,group_id) VALUES(?,?,?, ?,?,?)`, code, req.Name, "DRAFT", nid, u.TenantID, u.GroupID)
-		if err != nil { return err }
-		pid, err = pres.LastInsertId(); return err
+		if err != nil {
+			return err
+		}
+		pid, err = pres.LastInsertId()
+		return err
 	})
-	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
 	rinfo.GinOK(c, gin.H{"projectId": pid, "questionnaireId": nid}, "项目「"+req.Name+"」已创建（草稿）")
 }
 
@@ -250,9 +261,15 @@ func (s *Service) AddQuestion(c *gin.Context) {
 		}
 	}
 	qres, err := s.db.Exec(`INSERT INTO qnr_question(qnr_id,q_no,q_type,title,required,min_value,max_value) VALUES(?,?,?,?,?,?,?)`, qid, qno, req.QType, req.Text, 1, mn, mx)
-	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
 	newQID, err = qres.LastInsertId()
-	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
 	for i, txt := range req.Options {
 		if _, err := s.db.Exec(`INSERT INTO qnr_option(question_id,opt_no,opt_text,opt_value,jump,jump_target) VALUES(?,?,?,?,?,NULL)`, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT"); err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
@@ -328,14 +345,23 @@ func (s *Service) SetQuota(c *gin.Context) {
 			}
 		}
 		qres, err := tx.Exec(`INSERT INTO qnr_quota(qnr_id,quota_name,total_target) VALUES(?,?,0)`, qid, req.Name)
-		if err != nil { return err }
-		qnID, err := qres.LastInsertId(); if err != nil { return err }
+		if err != nil {
+			return err
+		}
+		qnID, err := qres.LastInsertId()
+		if err != nil {
+			return err
+		}
 		for _, cell := range req.Cells {
 			total += cell.Target
 			cond, _ := json.Marshal([]map[string]interface{}{{"questionId": cell.QuestionID, "in": cell.InList}})
-			if _, err := tx.Exec(`INSERT INTO qnr_quota_cell(quota_id,conditions_json,target_count,done_count) VALUES(?,?,?,0)`, qnID, string(cond), cell.Target); err != nil { return err }
+			if _, err := tx.Exec(`INSERT INTO qnr_quota_cell(quota_id,conditions_json,target_count,done_count) VALUES(?,?,?,0)`, qnID, string(cond), cell.Target); err != nil {
+				return err
+			}
 		}
-		if _, err := tx.Exec(`UPDATE qnr_quota SET total_target=? WHERE id=?`, total, qnID); err != nil { return err }
+		if _, err := tx.Exec(`UPDATE qnr_quota SET total_target=? WHERE id=?`, total, qnID); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -435,11 +461,17 @@ func (s *Service) Revise(c *gin.Context) {
 			}
 		}
 		qres, err := s.db.Exec(`INSERT INTO qnr_question(qnr_id,q_no,q_type,title,required,min_value,max_value) VALUES(?,?,?,?,?,?,?)`, qid, qno, spec.QType, spec.Text, 1, mn, mx)
-		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
 		newQID, err = qres.LastInsertId()
-		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
 		for i, txt := range spec.Options {
-						s.db.Exec(`INSERT INTO qnr_option(question_id,opt_no,opt_text,opt_value,jump,jump_target) VALUES(?,?,?,?,?,NULL)`, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT")
+			s.db.Exec(`INSERT INTO qnr_option(question_id,opt_no,opt_text,opt_value,jump,jump_target) VALUES(?,?,?,?,?,NULL)`, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT")
 		}
 		added = append(added, newQID)
 	}
@@ -522,9 +554,15 @@ func (s *Service) ImportSamples(c *gin.Context) {
 		var sk int64
 		sk = time.Now().UnixNano()
 		res, err := s.db.Exec(`INSERT INTO smp_sample(project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?)`, pid, nm, "未知", "IDLE", nil, 0, nil, sk, nil)
-		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
 		sid, err := res.LastInsertId()
-		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+		if err != nil {
+			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+			return
+		}
 		s.db.Exec(`INSERT INTO smp_phone VALUES(?,?,?,1,1)`, sid, sid, phone)
 		made = append(made, sid)
 	}

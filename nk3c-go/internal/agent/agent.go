@@ -914,9 +914,13 @@ func (s *Service) PreviewTask(c *gin.Context) {
 		var qid int64
 		_ = tx.QueryRow(`SELECT queue_id FROM prj_queue WHERE project_id=?`, projectID).Scan(&qid)
 		taskRes, err := tx.Exec(`INSERT INTO cti_sample_task(project_id,sample_id,call_id,queue_id,assigned_user_id,status,leased_at,lease_until) VALUES(?,?,NULL,?,?, 'PREVIEW',?,?)`, projectID, sid, qid, u.ID, now, store.TimeFor(s.db.Driver, time.Now().UTC().Add(30*time.Second)))
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		pid, err := taskRes.LastInsertId()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		data = map[string]interface{}{"taskId": pid, "sampleId": sid, "custName": name, "phone": phone, "previewSeconds": 30}
 		rinfo.GinOK(c, data, "预览样本已锁定")
 		return errAbort

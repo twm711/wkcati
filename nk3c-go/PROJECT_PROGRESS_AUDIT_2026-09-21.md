@@ -271,3 +271,5 @@ PREDICTIVE 多轮测试增加第四轮短样本保护：将窗口历史减少到
 继续清理最新记录定位：IVR `finalize` 现在保存 `ivr_call_log` 后通过 `LastInsertId()` 获取本次记录 ID，并将该 ID 传入转人工工单，删除了从 `cti_call_record` 使用 `MAX(id)` 猜测呼叫的路径；SIP 入站录音回填改为按 caller_no、空录音和 id 倒序定位，删除 `MAX(id)` 子查询。该录音回填仍依赖 caller_no 关联，真实并发同号呼入需要集成测试确认。
 
 继续清理剩余自定义排序值：样本导入和工单归档不再使用 `MAX(shuffle_key)+1`，改用 `time.Now().UnixNano()` 生成高分散排序键；应用代码（排除测试代码）已无 `MAX(id)`、`MAX(shuffle_key)` 的 ID/排序键生成路径。该排序键不承担主键职责，仍需在高并发压测中确认碰撞概率和排序分布。
+
+恢复 Go 1.23.12 工具链后，已对本轮修改文件执行 gofmt，并运行 `go test ./...`：全部通过。结果包括 agent、app、itests、media、store 测试通过，其余无测试包正常编译；media 测试耗时约 23.6 秒。本次全绿测试已覆盖此前应用层自增 ID 修改，但真实 MySQL、多实例和真实 SIP 生产网络仍未验证。

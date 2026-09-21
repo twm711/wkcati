@@ -24,9 +24,13 @@ func (s *Service) CreateFromIVR(projectID, callID int64, callerNo, path string, 
 	}
 	res, err := s.db.Exec(`INSERT INTO wko_ticket(project_id,call_id,caller_no,subject,detail,status,priority,created_at)
 		VALUES(?,?,?,?,?,'PENDING','HIGH',?)`, projectID, callID, callerNo, "IVR转人工来电", "呼入菜单按键0转人工；通话轨迹："+path, ts)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	tid, err := res.LastInsertId()
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	return tid, nil
 }
 
@@ -192,8 +196,13 @@ func (s *Service) advance(c *gin.Context, target string) {
 			_ = tx.QueryRow(`SELECT caller_no FROM wko_ticket WHERE id=?`, tid).Scan(&callerNo)
 			sampleRes, err := tx.Exec(`INSERT INTO smp_sample(project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?)`,
 				1, fmt.Sprintf("回访-工单#%d", tid), "未知", "IDLE", nil, 0, nil, sk, nil)
-			if err != nil { return err }
-			sid, err := sampleRes.LastInsertId(); if err != nil { return err }
+			if err != nil {
+				return err
+			}
+			sid, err := sampleRes.LastInsertId()
+			if err != nil {
+				return err
+			}
 			if _, err := tx.Exec(`INSERT INTO smp_phone VALUES(?,?,?,1,1)`, sid, sid, callerNo); err != nil {
 				return err
 			}
