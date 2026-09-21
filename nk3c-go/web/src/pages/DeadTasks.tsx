@@ -4,7 +4,7 @@ import { ReloadOutlined, RollbackOutlined } from '@ant-design/icons'
 import { api, hasRole } from '../api'
 
 interface DeadTask { taskId:number; projectId:number; sampleId:number; callId:number; retryCount:number; maxRetries:number; completedAt:string; custName:string }
-interface Attempt { id:number; taskId:number; callId:number; reason:string; outcome:string; failureCode:string; failureDetail:string; createdAt:string }
+interface Attempt { id:number; taskId:number; callId:number; reason:string; outcome:string; failureCode:string; failureDetail:string; q850Cause?:number; q850Text:string; createdAt:string }
 
 export default function DeadTasks() {
   const { message } = App.useApp()
@@ -32,7 +32,7 @@ export default function DeadTasks() {
   }
   return <Card title="死信任务" extra={<Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>}>
     <Typography.Paragraph type="secondary">达到最大重试次数的样本会进入死信。恢复后重新进入样本池，并保留原任务尝试历史。</Typography.Paragraph>
-    <Table rowKey="taskId" loading={loading} dataSource={rows} pagination={{ pageSize: 20 }} expandable={{ expandedRowRender: r => <div><Button type="link" onClick={() => loadAttempts(r.sampleId)}>加载尝试历史</Button><Table size="small" rowKey="id" pagination={false} dataSource={attemptRows[r.sampleId] || []} columns={[{title:'时间',dataIndex:'createdAt'},{title:'原因',dataIndex:'reason'},{title:'结果',dataIndex:'outcome'},{title:'失败码',dataIndex:'failureCode'},{title:'说明',dataIndex:'failureDetail'}]} /></div> }} columns={[
+    <Table rowKey="taskId" loading={loading} dataSource={rows} pagination={{ pageSize: 20 }} expandable={{ expandedRowRender: r => <div><Button type="link" onClick={() => loadAttempts(r.sampleId)}>加载尝试历史</Button><Table size="small" rowKey="id" pagination={false} dataSource={attemptRows[r.sampleId] || []} columns={[{title:'时间',dataIndex:'createdAt'},{title:'原因',dataIndex:'reason'},{title:'结果',dataIndex:'outcome'},{title:'失败码',dataIndex:'failureCode'},{title:'Q.850',render:(_,a)=><span>{a.q850Cause ?? '-'} {a.q850Text}</span>},{title:'说明',dataIndex:'failureDetail'}]} /></div> }} columns={[
       { title:'任务', dataIndex:'taskId' }, { title:'样本', dataIndex:'sampleId' }, { title:'客户', dataIndex:'custName' },
       { title:'项目', dataIndex:'projectId' }, { title:'重试次数', render:(_,r)=> <Tag color="error">{r.retryCount} / {r.maxRetries}</Tag> },
       { title:'进入时间', dataIndex:'completedAt' }, { title:'操作', hidden:!canManage, render:(_,r)=><Popconfirm title="确认重新入池？" onConfirm={()=>retry(r.sampleId)}><Button type="link" icon={<RollbackOutlined />}>重新入池</Button></Popconfirm> },

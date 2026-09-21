@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
+	"strconv"
 
 	"nk3c/internal/store"
 )
@@ -103,8 +105,28 @@ func (s *Service) RecordFailureCause(callID int64, resultCode, detail string) er
 	if err := s.db.QueryRow(`SELECT id FROM cti_task_attempt WHERE call_id=? AND reason='RESULT_CODE' ORDER BY id DESC LIMIT 1`, callID).Scan(&attemptID); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`UPDATE cti_task_attempt SET failure_code=?,failure_detail=? WHERE id=?`, resultCode, detail, attemptID)
+	q850Cause, q850Text := parseQ850(detail)
+	_, err := s.db.Exec(`UPDATE cti_task_attempt SET failure_code=?,failure_detail=?,q850_cause=?,q850_text=? WHERE id=?`, resultCode, detail, q850Cause, q850Text, attemptID)
 	return err
+}
+
+var q850CauseRE = regexp.MustCompile(`(?i)(?:cause|cause-code)\s*[=:]\s*(\d+)`)
+var q850TextRE = regexp.MustCompile(`(?i)text\s*=\s*"([^"]*)"`)
+
+func parseQ850(detail string) (interface{}, interface{}) {
+	m := q850CauseRE.FindStringSubmatch(detail)
+	if len(m) == 0 {
+		return nil, nil
+	}
+	cause, err := strconv.Atoi(m[1])
+	if err != nil {
+		return nil, nil
+	}
+	text := ""
+	if t := q850TextRE.FindStringSubmatch(detail); len(t) > 1 {
+		text = t[1]
+	}
+	return cause, text
 }
 
 // ── 核心（HTTP handler 与 SIP 桥共用；BizErr=业务分支已定论、事务提交）──────────

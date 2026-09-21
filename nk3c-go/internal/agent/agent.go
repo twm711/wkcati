@@ -276,7 +276,7 @@ func (s *Service) DeadTaskAttempts(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeNotFound, "样本不存在")
 		return
 	}
-	rows, err := s.db.Query(`SELECT id,task_id,call_id,reason,outcome,COALESCE(failure_code,''),COALESCE(failure_detail,''),created_at FROM cti_task_attempt WHERE sample_id=? ORDER BY created_at DESC LIMIT 100`, sid)
+	rows, err := s.db.Query(`SELECT id,task_id,call_id,reason,outcome,COALESCE(failure_code,''),COALESCE(failure_detail,''),q850_cause,COALESCE(q850_text,''),created_at FROM cti_task_attempt WHERE sample_id=? ORDER BY created_at DESC LIMIT 100`, sid)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
@@ -285,9 +285,10 @@ func (s *Service) DeadTaskAttempts(c *gin.Context) {
 	out := []map[string]interface{}{}
 	for rows.Next() {
 		var id, taskID, callID int64
-		var reason, outcome, code, detail, created string
-		if rows.Scan(&id, &taskID, &callID, &reason, &outcome, &code, &detail, &created) == nil {
-			out = append(out, gin.H{"id": id, "taskId": taskID, "callId": callID, "reason": reason, "outcome": outcome, "failureCode": code, "failureDetail": detail, "createdAt": created})
+		var cause sql.NullInt64
+		var reason, outcome, code, detail, q850Text, created string
+		if rows.Scan(&id, &taskID, &callID, &reason, &outcome, &code, &detail, &cause, &q850Text, &created) == nil {
+			out = append(out, gin.H{"id": id, "taskId": taskID, "callId": callID, "reason": reason, "outcome": outcome, "failureCode": code, "failureDetail": detail, "q850Cause": cause, "q850Text": q850Text, "createdAt": created})
 		}
 	}
 	rinfo.GinOK(c, out, "ok")
