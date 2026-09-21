@@ -537,7 +537,7 @@ func (s *Service) ImportSamples(c *gin.Context) {
 		sid := first + int64(i)
 		var sk int64
 		_ = s.db.QueryRow(`SELECT COALESCE(MAX(shuffle_key),0)+1 FROM smp_sample`).Scan(&sk)
-		if _, err := s.db.Exec(`INSERT INTO smp_sample VALUES(?,?,?,?,?,?,?,?,?,?)`, sid, pid, nm, "未知", "IDLE", nil, 0, nil, nil, sk); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?,?)`, sid, pid, nm, "未知", "IDLE", nil, 0, nil, sk, nil); err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 			return
 		}

@@ -140,9 +140,10 @@ func (s *Service) Dispatch(c *gin.Context) {
 		err := tx.QueryRow(`SELECT s.id,s.cust_name,s.attempts,p.phone_no FROM smp_sample s
 			JOIN smp_phone p ON p.sample_id=s.id AND p.valid_flag=1
 			WHERE s.project_id=? AND s.status='IDLE' AND s.attempts<?
+			AND (s.next_attempt_at IS NULL OR s.next_attempt_at<=?)
 			AND (s.last_connected_at IS NULL OR s.last_connected_at<?)
 			AND NOT EXISTS (SELECT 1 FROM smp_blacklist b WHERE b.phone_no=p.phone_no)
-			ORDER BY s.shuffle_key LIMIT 1`, projectID, redialMax, cutoff).Scan(&sid, &custName, &attempts, &phone)
+			ORDER BY s.shuffle_key LIMIT 1`, projectID, redialMax, store.NowFor(s.db.Driver), cutoff).Scan(&sid, &custName, &attempts, &phone)
 		if err == sql.ErrNoRows {
 			rinfo.GinOK(c, nil, "派样失败：过滤后无可用样本（黑名单/半年原则/重拨上限/池空）")
 			return errAbort
@@ -306,7 +307,7 @@ func (s *Service) RetryDeadTask(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeNotFound, "死信样本不存在")
 		return
 	}
-	if _, err := s.db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL,attempts=0 WHERE id=? AND status='DEAD'`, sid); err != nil {
+	if _, err := s.db.Exec(`UPDATE smp_sample SET status='IDLE',owner_agent_id=NULL,attempts=0,next_attempt_at=NULL WHERE id=? AND status='DEAD'`, sid); err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
 	}
@@ -381,7 +382,11 @@ func (s *Service) RecoverStaleTasks() (int64, error) {
 			if x.retryCount+1 >= x.maxRetries {
 				nextSampleStatus = "DEAD"
 			}
-			_, _ = tx.Exec(`UPDATE smp_sample SET status=?,owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, nextSampleStatus, x.sampleID)
+			nextAttemptAt := interface{}(nil)
+			if nextSampleStatus == "IDLE" {
+				nextAttemptAt = retryAvailableAt(s.db.Driver, x.retryCount+1)
+			}
+			_, _ = tx.Exec(`UPDATE smp_sample SET status=?,owner_agent_id=NULL,next_attempt_at=? WHERE id=? AND status IN ('ASSIGNED','INCALL')`, nextSampleStatus, nextAttemptAt, x.sampleID)
 			_, _ = tx.Exec(`UPDATE cti_call_record SET status='CLOSED',end_time=?,result_code='NA' WHERE id=? AND status='DIALING'`, now, x.callID)
 			recovered++
 		}
@@ -435,7 +440,11 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 			if x.retryCount+1 >= x.maxRetries {
 				nextSampleStatus = "DEAD"
 			}
-			if _, err := tx.Exec(`UPDATE smp_sample SET status=?,owner_agent_id=NULL WHERE id=? AND status IN ('ASSIGNED','INCALL')`, nextSampleStatus, x.sampleID); err != nil {
+			nextAttemptAt := interface{}(nil)
+			if nextSampleStatus == "IDLE" {
+				nextAttemptAt = retryAvailableAt(s.db.Driver, x.retryCount+1)
+			}
+			if _, err := tx.Exec(`UPDATE smp_sample SET status=?,owner_agent_id=NULL,next_attempt_at=? WHERE id=? AND status IN ('ASSIGNED','INCALL')`, nextSampleStatus, nextAttemptAt, x.sampleID); err != nil {
 				return err
 			}
 			_, _ = tx.Exec(`UPDATE cti_call_record SET status='CLOSED',end_time=?,result_code='NA' WHERE id=? AND status='DIALING' AND (result_code IS NULL OR result_code='')`, now, x.callID)
@@ -447,6 +456,17 @@ func (s *Service) ReapExpiredTasks() (int64, error) {
 }
 
 var errAbort = store.ErrAbort
+
+func retryAvailableAt(driver string, retry int64) string {
+	delay := 30 * time.Second
+	if retry >= 2 {
+		delay = 2 * time.Minute
+	}
+	if retry >= 3 {
+		delay = 10 * time.Minute
+	}
+	return store.TimeFor(driver, time.Now().UTC().Add(delay))
+}
 
 func mnSafe(v sql.NullFloat64) interface{} {
 	if v.Valid {

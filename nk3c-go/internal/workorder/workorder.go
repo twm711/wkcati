@@ -193,8 +193,8 @@ func (s *Service) advance(c *gin.Context, target string) {
 			_ = tx.QueryRow(`SELECT COALESCE(MAX(shuffle_key),0)+1 FROM smp_sample`).Scan(&sk)
 			var callerNo string
 			_ = tx.QueryRow(`SELECT caller_no FROM wko_ticket WHERE id=?`, tid).Scan(&callerNo)
-			if _, err := tx.Exec(`INSERT INTO smp_sample VALUES(?,?,?,?,?,?,?,?,NULL,?)`,
-				sid, 1, fmt.Sprintf("回访-工单#%d", tid), "未知", "IDLE", nil, 0, nil, sk); err != nil {
+			if _, err := tx.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+				sid, 1, fmt.Sprintf("回访-工单#%d", tid), "未知", "IDLE", nil, 0, nil, sk, nil); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(`INSERT INTO smp_phone VALUES(?,?,?,1,1)`, sid, sid, callerNo); err != nil {
