@@ -211,3 +211,5 @@
 扩展真实自动调研成功 E2E：数据库线路初始为 OPEN 且 opened_until 已到期，成功完成真实 SIP 问卷后确认线路恢复 CLOSED、failure_streak=0、active_calls=0；半开成功恢复已具备真实 SIP 200 OK/问卷闭环证据。
 
 将 HALF_OPEN 单探测竞争测试从 2 个并发领取者扩展到 8 个，并以 `-count=10` 重复执行，均严格只成功 1 个探测；这是数据库原子竞争证据，尚不等同于 MySQL 多进程真实压测。
+
+当前沙箱无 `mysql`/`mysqld` 服务，未宣称真实 MySQL 迁移完成；新增 `TestMySQLMigrationsAreOrderedAndHaveGooseSections`，静态检查 MySQL 迁移版本唯一、Goose Up/Down 完整且不含 SQLite `INSERT OR IGNORE`，真实 MySQL 执行仍待上线环境验证。
