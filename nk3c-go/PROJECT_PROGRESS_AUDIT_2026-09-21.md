@@ -253,3 +253,5 @@ PREDICTIVE 多轮测试增加第三轮质量恢复：将 BREAKOFF 样本恢复�
 PREDICTIVE 多轮测试增加第四轮短样本保护：将窗口历史减少到 5 条后再次调用生产 Claim，断言倍率保持第三轮约 0.862、不会重置或剧烈调整，且 last_sample_count 保留上一轮 20；真实 MySQL DSN 未配置，仍待外部执行。
 
 修正生产 `ClaimProgressiveTask` 候选项目选择：不再仅按 project_id 固定优先，改为先按各项目当前 LEASED 任务数升序再按 project_id，降低一个项目满载时长期阻塞其他项目的风险；多项目 MySQL 真实并发测试仍待补齐。
+
+进一步收紧候选项目查询：在进入排序前排除当前 LEASED 数已达到项目 `max_concurrent` 的项目，配合按负载升序选择，避免满载项目占据 Claim 入口；完整多项目真实 MySQL 测试仍待补齐。
