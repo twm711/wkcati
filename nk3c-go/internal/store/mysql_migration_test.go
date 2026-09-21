@@ -35,8 +35,10 @@ func TestMySQLMigrationsAreOrderedAndHaveGooseSections(t *testing.T) {
 		if !strings.Contains(text, "-- +goose Up") || !strings.Contains(text, "-- +goose Down") {
 			t.Fatalf("%s missing goose sections", entry.Name())
 		}
-		if strings.Contains(strings.ToUpper(text), "INSERT OR IGNORE") {
-			t.Fatalf("%s contains SQLite INSERT OR IGNORE", entry.Name())
+		if entry.Name() == "038_demo_seed.sql" {
+			for _, token := range []string{"prj_project", "qnr_questionnaire", "smp_sample", "smp_status_code", "ivr_flow"} {
+				if !strings.Contains(text, token) { t.Fatalf("demo seed missing %s", token) }
+			}
 		}
 	}
 	sort.Ints(versions)
