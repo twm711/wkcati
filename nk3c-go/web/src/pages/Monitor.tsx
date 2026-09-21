@@ -114,7 +114,10 @@ export default function Monitor() {
 
   const updateLineRate = async (line: LineRuntime, value: number | null) => {
     if (value == null || value < 0 || value > 10000) return
-    const r = await api.post('/api/monitor/lines/rate', { lineNo: line.line, rateLimitPerMinute: value })
+    const reason = window.prompt('请输入调整原因')
+    if (!reason) return
+    if (!window.confirm(`确认将线路 ${line.line} 基础速率调整为 ${value} 次/分钟？`)) return
+    const r = await api.post('/api/monitor/lines/rate', { lineNo: line.line, rateLimitPerMinute: value, reason })
     if (r.success) { message.success(`线路 ${line.line} 基础速率已更新`); load() } else message.error(r.message)
   }
 

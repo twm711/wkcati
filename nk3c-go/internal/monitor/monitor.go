@@ -351,21 +351,33 @@ func (s *Service) UpdateLineRate(c *gin.Context) {
 	var req struct {
 		LineNo             string `json:"lineNo" binding:"required"`
 		RateLimitPerMinute int    `json:"rateLimitPerMinute"`
+		Reason             string `json:"reason"`
 	}
 	if c.ShouldBindJSON(&req) != nil || req.RateLimitPerMinute < 0 || req.RateLimitPerMinute > 10000 {
 		rinfo.GinFail(c, rinfo.CodeParam, "线路速率必须在 0 到 10000 之间")
 		return
+	}
+	var oldRate int
+	if err := s.db.QueryRow(`SELECT rate_limit_per_minute FROM cti_outbound_line WHERE tenant_id=? AND line_no=?`, u.TenantID, req.LineNo).Scan(&oldRate); err != nil {
+		rinfo.GinFail(c, rinfo.CodeNotFound, "线路不存在")
+		return
+	}
+	if req.Reason == "" {
+		req.Reason = "monitor adjustment"
 	}
 	res, err := s.db.Exec(`UPDATE cti_outbound_line SET rate_limit_per_minute=? WHERE tenant_id=? AND line_no=?`, req.RateLimitPerMinute, u.TenantID, req.LineNo)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		rinfo.GinFail(c, rinfo.CodeNotFound, "线路不存在")
+	var auditID int64
+	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_line_rate_audit`).Scan(&auditID)
+	if _, err = s.db.Exec(`INSERT INTO cti_line_rate_audit(id,tenant_id,line_no,operator_id,old_rate,new_rate,reason,created_at) VALUES(?,?,?,?,?,?,?,?)`, auditID, u.TenantID, req.LineNo, u.ID, oldRate, req.RateLimitPerMinute, req.Reason, store.NowFor(s.db.Driver)); err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 		return
 	}
-	rinfo.GinOK(c, gin.H{"lineNo": req.LineNo, "rateLimitPerMinute": req.RateLimitPerMinute}, "线路速率已更新")
+	_ = res
+	rinfo.GinOK(c, gin.H{"lineNo": req.LineNo, "oldRateLimitPerMinute": oldRate, "rateLimitPerMinute": req.RateLimitPerMinute}, "线路速率已更新")
 }
 
 // LineCircuitEvents 查询线路熔断状态变化时间线。
