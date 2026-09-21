@@ -99,17 +99,16 @@ func (s *Service) Create(c *gin.Context) {
 		return
 	}
 	var pid, nid int64
-	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM prj_project`).Scan(&pid)
-	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM qnr_questionnaire`).Scan(&nid)
-	code := fmt.Sprintf("P2026-%03d", pid)
-	if _, err := s.db.Exec(`INSERT INTO prj_project(id,project_code,project_name,status,questionnaire_id,tenant_id,group_id) VALUES(?,?,?,?,?,?,?)`, pid, code, req.Name, "DRAFT", nid, u.TenantID, u.GroupID); err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
-		return
-	}
-	if _, err := s.db.Exec(`INSERT INTO qnr_questionnaire VALUES(?,?,?,'DRAFT')`, nid, req.Name, "Draft"); err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
-		return
-	}
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		qres, err := tx.Exec(`INSERT INTO qnr_questionnaire(title,version,status) VALUES(?,?,'DRAFT')`, req.Name, "Draft")
+		if err != nil { return err }
+		nid, err = qres.LastInsertId(); if err != nil { return err }
+		code := fmt.Sprintf("P2026-%03d", nid)
+		pres, err := tx.Exec(`INSERT INTO prj_project(project_code,project_name,status,questionnaire_id,tenant_id,group_id) VALUES(?,?,?, ?,?,?)`, code, req.Name, "DRAFT", nid, u.TenantID, u.GroupID)
+		if err != nil { return err }
+		pid, err = pres.LastInsertId(); return err
+	})
+	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
 	rinfo.GinOK(c, gin.H{"projectId": pid, "questionnaireId": nid}, "项目「"+req.Name+"」已创建（草稿）")
 }
 
@@ -238,7 +237,6 @@ func (s *Service) AddQuestion(c *gin.Context) {
 		return
 	}
 	var newQID int64
-	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),100)+1 FROM qnr_question`).Scan(&newQID)
 	var qno int64
 	_ = s.db.QueryRow(`SELECT COALESCE(MAX(q_no),0)+1 FROM qnr_question WHERE qnr_id=?`, qid).Scan(&qno)
 	var mn, mx interface{}
@@ -250,15 +248,12 @@ func (s *Service) AddQuestion(c *gin.Context) {
 			mx = *req.Max
 		}
 	}
-	if _, err := s.db.Exec(`INSERT INTO qnr_question VALUES(?,?,?,?,?,?,?,?)`,
-		newQID, qid, qno, req.QType, req.Text, 1, mn, mx); err != nil {
-		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
-		return
-	}
+	qres, err := s.db.Exec(`INSERT INTO qnr_question(qnr_id,q_no,q_type,title,required,min_value,max_value) VALUES(?,?,?,?,?,?,?)`, qid, qno, req.QType, req.Text, 1, mn, mx)
+	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+	newQID, err = qres.LastInsertId()
+	if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
 	for i, txt := range req.Options {
-		var oid int64
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),100)+1 FROM qnr_option`).Scan(&oid)
-		if _, err := s.db.Exec(`INSERT INTO qnr_option VALUES(?,?,?,?,?,?,NULL)`, oid, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT"); err != nil {
+		if _, err := s.db.Exec(`INSERT INTO qnr_option(question_id,opt_no,opt_text,opt_value,jump,jump_target) VALUES(?,?,?,?,?,NULL)`, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT"); err != nil {
 			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
 			return
 		}
@@ -331,20 +326,15 @@ func (s *Service) SetQuota(c *gin.Context) {
 				return err
 			}
 		}
-		var qnID int64
-		_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM qnr_quota`).Scan(&qnID)
+		qres, err := tx.Exec(`INSERT INTO qnr_quota(qnr_id,quota_name,total_target) VALUES(?,?,0)`, qid, req.Name)
+		if err != nil { return err }
+		qnID, err := qres.LastInsertId(); if err != nil { return err }
 		for _, cell := range req.Cells {
 			total += cell.Target
 			cond, _ := json.Marshal([]map[string]interface{}{{"questionId": cell.QuestionID, "in": cell.InList}})
-			var cid int64
-			_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM qnr_quota_cell`).Scan(&cid)
-			if _, err := tx.Exec(`INSERT INTO qnr_quota_cell VALUES(?,?,?,?,0)`, cid, qnID, string(cond), cell.Target); err != nil {
-				return err
-			}
+			if _, err := tx.Exec(`INSERT INTO qnr_quota_cell(quota_id,conditions_json,target_count,done_count) VALUES(?,?,?,0)`, qnID, string(cond), cell.Target); err != nil { return err }
 		}
-		if _, err := tx.Exec(`INSERT INTO qnr_quota VALUES(?,?,?,?)`, qnID, qid, req.Name, total); err != nil {
-			return err
-		}
+		if _, err := tx.Exec(`UPDATE qnr_quota SET total_target=? WHERE id=?`, total, qnID); err != nil { return err }
 		return nil
 	})
 	if err != nil {
