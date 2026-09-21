@@ -37,6 +37,9 @@ func TestOutboundAutoSurveyE2E(t *testing.T) {
 	if err := db.Migrate(true); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO cti_outbound_line(id,tenant_id,line_no,host,port,enabled,priority,capacity,active_calls,circuit_state,failure_streak,opened_until,rate_limit_per_minute,created_at) VALUES(9801,1,'line-success','127.0.0.1',25073,1,1,1,0,'OPEN',5,'2000-01-01T00:00:00+00:00',30,?)`, store.NowFor(db.Driver)); err != nil {
+		t.Fatal(err)
+	}
 
 	// 被叫模拟器（"客户" 13800000101）：应答后 2.0s 发 '2'（Q11→女/112）、3.5s 发 '8'（Q12→8 分）
 	uaC, _ := sipgo.NewUA()
@@ -149,6 +152,14 @@ func TestOutboundAutoSurveyE2E(t *testing.T) {
 	})
 	if rc != "SUCCESS" {
 		t.Fatalf("结果码应 SUCCESS: %s", rc)
+	}
+	var lineState string
+	var lineStreak, lineActive int
+	if err := db.QueryRow(`SELECT circuit_state,failure_streak,active_calls FROM cti_outbound_line WHERE id=?`, 9801).Scan(&lineState, &lineStreak, &lineActive); err != nil {
+		t.Fatal(err)
+	}
+	if lineState != "CLOSED" || lineStreak != 0 || lineActive != 0 {
+		t.Fatalf("半开成功未恢复线路: state=%s streak=%d active=%d", lineState, lineStreak, lineActive)
 	}
 	if rec == "" {
 		t.Fatalf("record_file 未回填")

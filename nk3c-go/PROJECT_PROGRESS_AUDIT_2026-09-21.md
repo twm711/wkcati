@@ -207,3 +207,5 @@
 新增真实 HALF_OPEN 失败 E2E：将 OPEN 线路 opened_until 调至过去后再次返回 486，确认探测进入 HALF_OPEN、失败后重新 OPEN 且 failure_streak=6。期间修复线路选择 bug：严重失败率过滤不能阻断已到期 OPEN 线路的单探测。
 
 新增 `TestHalfOpenSuccessfulResultClosesCircuit`：模拟 OPEN 线路到期后的成功结果收尾，验证 SUCCESS 会将 circuit_state 恢复 CLOSED、failure_streak 清零；这是业务收尾测试，真实 SIP 200 OK + 完整问卷成功恢复 E2E 仍待补齐。
+
+扩展真实自动调研成功 E2E：数据库线路初始为 OPEN 且 opened_until 已到期，成功完成真实 SIP 问卷后确认线路恢复 CLOSED、failure_streak=0、active_calls=0；半开成功恢复已具备真实 SIP 200 OK/问卷闭环证据。
