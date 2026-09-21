@@ -143,7 +143,7 @@
 7. **生产媒体**：SIP/TLS/SRTP、REGISTER/鉴权、NAT/媒体策略、录音对象存储、加密、留存、回放授权、桥接录音混音。
 8. **安全与可观测性**：密码哈希、Redis/session TTL、Origin 白名单、限流、metrics/tracing/告警、审计留存、备份恢复演练。
 
-本轮开始建立拨号策略模型：新增 `cti_dial_strategy` 及 `/api/monitor/dial-strategies` 查询/配置接口，支持 `PREDICTIVE`、`PROGRESSIVE`、`PREVIEW`、最大并发、呼损目标和预览秒数；当前为配置模型，尚未接入真实自动拨号器节奏控制，不能宣称三种拨号模式已完成。
+本轮开始建立拨号策略模型：新增 `cti_dial_strategy` 及 `/api/monitor/dial-strategies` 查询/配置接口，支持 `PREDICTIVE`、`PROGRESSIVE`、`PREVIEW`、最大并发、呼损目标和预览秒数；当前已接入项目级最大并发限制：派样和等待调度均会统计项目 LEASED 任务并在达到 max_concurrent 时进入 WAITING；`abandon_target`、真实预测倍率、渐进节奏和预览倒计时仍未接入媒体自动拨号器，不能宣称三种拨号模式已完成。
 
 ## 6. P2 改进项
 

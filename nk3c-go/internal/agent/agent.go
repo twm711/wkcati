@@ -177,6 +177,29 @@ func (s *Service) Dispatch(c *gin.Context) {
 				return errAbort
 			}
 		}
+		var strategyMode string
+		var strategyMax int
+		if tx.QueryRow(`SELECT mode,max_concurrent FROM cti_dial_strategy WHERE project_id=? AND enabled=1`, projectID).Scan(&strategyMode, &strategyMax) == nil {
+			var projectActive int
+			_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE project_id=? AND status='LEASED'`, projectID).Scan(&projectActive)
+			if strategyMax > 0 && projectActive >= strategyMax {
+				var waitID, queuePriority int64
+				if queueID.Valid {
+					_ = tx.QueryRow(`SELECT COALESCE(MAX(id),0)+1 FROM cti_waiting_task`).Scan(&waitID)
+					_ = tx.QueryRow(`SELECT priority FROM prj_queue WHERE project_id=?`, projectID).Scan(&queuePriority)
+					if queuePriority == 0 {
+						queuePriority = 100
+					}
+					waitSQL := `INSERT INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?) ON CONFLICT(agent_id,project_id,status) DO NOTHING`
+					if s.db.Driver == "mysql" {
+						waitSQL = `INSERT IGNORE INTO cti_waiting_task(id,tenant_id,project_id,queue_id,agent_id,priority,status,created_at) VALUES(?,?,?,?,?,?, 'WAITING',?)`
+					}
+					_, _ = tx.Exec(waitSQL, waitID, tenantID, projectID, queueID.Int64, u.ID, queuePriority, store.NowFor(s.db.Driver))
+				}
+				rinfo.GinOK(c, gin.H{"status": "WAITING", "projectId": projectID, "mode": strategyMode}, "拨号策略并发已满，已进入等待队列")
+				return errAbort
+			}
+		}
 		halfyear, _ := strconv.ParseInt(param(tx, "halfyear.days", "180"), 10, 64)
 		redialMax, _ := strconv.ParseInt(param(tx, "redial.max", "3"), 10, 64)
 		cutoff := time.Now().UTC().Add(-time.Duration(halfyear) * 24 * time.Hour).Format("2006-01-02T15:04:05+00:00")
@@ -806,6 +829,13 @@ func (s *Service) ProcessWaitingTasks() (int64, error) {
 			// 每轮每个坐席最多自动分配一个，避免单个坐席/队列长期霸占调度批次。
 			if assignedAgents[w.agentID] {
 				continue
+			}
+			var strategyMax, projectActive int
+			if tx.QueryRow(`SELECT max_concurrent FROM cti_dial_strategy WHERE project_id=? AND enabled=1`, w.projectID).Scan(&strategyMax) == nil {
+				_ = tx.QueryRow(`SELECT COUNT(*) FROM cti_sample_task WHERE project_id=? AND status='LEASED'`, w.projectID).Scan(&projectActive)
+				if strategyMax > 0 && projectActive >= strategyMax {
+					continue
+				}
 			}
 			var capacity, active int
 			_ = tx.QueryRow(`SELECT capacity FROM cti_agent_queue WHERE user_id=? AND queue_id=? AND enabled=1`, w.agentID, w.queueID).Scan(&capacity)
