@@ -44,10 +44,8 @@ type OutboundCaller struct {
 // Dial 执行一通外呼自动调研；返回结果码提交数据（供 HTTP 响应）
 func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]interface{}, string, error) {
 	if o.dg == nil {
-		if finisher, ok := o.Driver.(interface {
-			Finish(int64, string) (map[string]interface{}, string, error)
-		}); ok {
-			_, msg, _ := finisher.Finish(callID, "NA")
+		if o.Driver != nil {
+			_, msg, _ := o.Driver.FinishOutbound(callID, "NA")
 			return nil, msg, fmt.Errorf("话务域未启动（--sip-addr）")
 		}
 		return nil, "", fmt.Errorf("话务域未启动（--sip-addr）")
@@ -74,10 +72,8 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 		if reserveErr != nil {
 			hasLines, _ := selector.HasOutboundLines(callID)
 			if hasLines {
-				if finisher, ok := o.Driver.(interface {
-					Finish(int64, string) (map[string]interface{}, string, error)
-				}); ok {
-					result, msg, _ := finisher.Finish(callID, "NA")
+				if o.Driver != nil {
+					result, msg, _ := o.Driver.FinishOutbound(callID, "NA")
 					return result, msg, fmt.Errorf("外呼线路不可用: %w", reserveErr)
 				}
 				return nil, "", fmt.Errorf("外呼线路不可用: %w", reserveErr)
@@ -88,10 +84,8 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 		}
 	}
 	if o.PeerHost == "" || o.PeerPort == 0 {
-		if finisher, ok := o.Driver.(interface {
-			Finish(int64, string) (map[string]interface{}, string, error)
-		}); ok {
-			result, msg, finishErr := finisher.Finish(callID, "NA")
+		if o.Driver != nil {
+			result, msg, finishErr := o.Driver.FinishOutbound(callID, "NA")
 			return result, msg, fmt.Errorf("未配置外呼路由（--outbound host:port）: %v", finishErr)
 		}
 		return nil, "", fmt.Errorf("未配置外呼路由（--outbound host:port）")
