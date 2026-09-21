@@ -21,6 +21,7 @@ import (
 	"nk3c/internal/ivr"
 	"nk3c/internal/media"
 	"nk3c/internal/monitor"
+	"nk3c/internal/orgscope"
 	"nk3c/internal/project"
 	"nk3c/internal/realtime"
 	"nk3c/internal/store"
@@ -46,6 +47,7 @@ func Build(db *store.DB) *App {
 	p := project.New(db)
 	ag := agent.New(db)
 	mo := monitor.New(db)
+	orgs := orgscope.New(db)
 	wk := workorder.New(db)
 	iv := ivr.New(db, wk)
 
@@ -70,6 +72,10 @@ func Build(db *store.DB) *App {
 	api := e.Group("/api", a.RequireAuth())
 	{
 		api.POST("/auth/logout", a.Logout)
+		api.GET("/orgs", orgs.ListOrgs)
+		api.POST("/orgs", orgs.CreateOrg)
+		api.GET("/orgs/:oid/groups", orgs.ListGroups)
+		api.POST("/orgs/:oid/groups", orgs.CreateGroup)
 
 		prj := api.Group("/project")
 		prj.GET("", p.List)

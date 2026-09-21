@@ -112,11 +112,18 @@ func (d *DB) Migrate(force bool) error {
 		if err != nil {
 			return err
 		}
+		// Goose-compatible files contain Up and Down sections. The embedded
+		// runner must execute only Up; executing Down as well silently removes
+		// tables immediately after creating them.
+		text := string(data)
+		if i := strings.Index(text, "-- +goose Down"); i >= 0 {
+			text = text[:i]
+		}
 		if ver == "003" && d.Driver == "sqlite" {
 			// 003 曾有部分字段随 001 初始表发布；升级旧库时允许重复列，
 			// 但其余错误仍必须中止，保证迁移不会静默损坏 schema。
 			clean := make([]string, 0)
-			for _, line := range strings.Split(string(data), "\n") {
+			for _, line := range strings.Split(text, "\n") {
 				if !strings.HasPrefix(strings.TrimSpace(line), "--") {
 					clean = append(clean, line)
 				}
@@ -130,7 +137,7 @@ func (d *DB) Migrate(force bool) error {
 					return fmt.Errorf("迁移 %s 失败: %w", ver, err)
 				}
 			}
-		} else if _, err := d.Exec(string(data)); err != nil {
+		} else if _, err := d.Exec(text); err != nil {
 			return fmt.Errorf("迁移 %s 失败: %w", ver, err)
 		}
 		appliedAt := time.Now().UTC().Format(time.RFC3339)
