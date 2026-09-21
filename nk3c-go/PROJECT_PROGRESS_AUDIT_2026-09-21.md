@@ -231,3 +231,5 @@
 新增可选 `internal/agent/mysql_claim_integration_test.go`，直接调用生产 `ClaimProgressiveTask`：构造 RUNNING/PROGRESSIVE 项目、READY 坐席、队列和 IDLE 样本，8 个并发调用者竞争，期望只有 1 次完整领取；当前无 DSN，测试跳过，真实 MySQL 执行待外部环境。
 
 将生产 MySQL Claim 集成测试切换为 PREDICTIVE，`max_concurrent=2`、READY 坐席为 1，8 个并发调用仍只允许 1 次领取；新增断言最小样本保护保持 `current_multiplier=1`、`last_sample_count=0`。真实 DSN 未配置，测试待外部执行。
+
+PREDICTIVE MySQL Claim 集成测试补充 20 条近期 SUCCESS 历史话务，达到最小样本阈值后断言 `last_sample_count=20`、接通率为 100% 时 `current_multiplier=1`；真实 DSN 未配置，仍待外部执行。
