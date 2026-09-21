@@ -27,6 +27,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               <Route path="/exports" element={<Export />} />
               <Route path="/workorders" element={<Workorders />} />
               <Route path="/ivr" element={<Ivr />} />
+              <Route path="/dead-tasks" element={<DeadTasks />} />
             </Route>
             <Route path="*" element={<Navigate to="/agent" replace />} />
           </Routes>
