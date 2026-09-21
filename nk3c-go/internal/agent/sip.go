@@ -73,15 +73,60 @@ func (s *Service) ReserveOutboundLine(callID int64) (OutboundLine, error) {
 			return line, err
 		}
 		if n, _ := res.RowsAffected(); n == 1 {
+			leaseUntil := store.TimeFor(s.db.Driver, time.Now().UTC().Add(90*time.Second))
+			if _, leaseErr := s.db.Exec(`INSERT INTO cti_outbound_line_lease(call_id,line_id,lease_until,created_at) VALUES(?,?,?,?)`, callID, id, leaseUntil, store.NowFor(s.db.Driver)); leaseErr != nil {
+				_, _ = s.db.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, id)
+				return line, leaseErr
+			}
 			return OutboundLine{ID: id, LineNo: no, Host: host, Port: port}, nil
 		}
 	}
 	return line, fmt.Errorf("外呼线路容量竞争失败")
 }
 
-func (s *Service) ReleaseOutboundLine(id int64) error {
-	_, err := s.db.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, id)
+func (s *Service) ReleaseOutboundLine(lineID, callID int64) error {
+	res, err := s.db.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=? AND line_id=?`, callID, lineID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	_, err = s.db.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, lineID)
 	return err
+}
+
+// ReapOutboundLineLeases 修复进程崩溃留下的线路容量占用。
+func (s *Service) ReapOutboundLineLeases() (int64, error) {
+	now := store.NowFor(s.db.Driver)
+	var released int64
+	err := s.db.Tx(func(tx *sql.Tx) error {
+		rows, err := tx.Query(`SELECT call_id,line_id FROM cti_outbound_line_lease WHERE lease_until<?`, now)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		type lease struct{ callID, lineID int64 }
+		var leases []lease
+		for rows.Next() {
+			var x lease
+			if err := rows.Scan(&x.callID, &x.lineID); err != nil {
+				return err
+			}
+			leases = append(leases, x)
+		}
+		for _, x := range leases {
+			if _, err := tx.Exec(`DELETE FROM cti_outbound_line_lease WHERE call_id=?`, x.callID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE cti_outbound_line SET active_calls=CASE WHEN active_calls>0 THEN active_calls-1 ELSE 0 END WHERE id=?`, x.lineID); err != nil {
+				return err
+			}
+			released++
+		}
+		return nil
+	})
+	return released, err
 }
 
 // LoadOutbound 装载外呼任务（话务须处于 DIALING）

@@ -56,6 +56,11 @@ func main() {
 	} else if n > 0 {
 		log.Printf("[任务租约] 启动已恢复 %d 个陈旧话务任务", n)
 	}
+	if n, err := leaseAgent.ReapOutboundLineLeases(); err != nil {
+		log.Printf("[线路容量] 启动过期租约清理失败: %v", err)
+	} else if n > 0 {
+		log.Printf("[线路容量] 启动释放 %d 个线路容量租约", n)
+	}
 	if n, err := leaseAgent.ReapExpiredTasks(); err != nil {
 		log.Printf("[任务租约] 启动恢复失败: %v", err)
 	} else if n > 0 {
@@ -67,6 +72,9 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
+				if _, err := leaseAgent.ReapOutboundLineLeases(); err != nil {
+					log.Printf("[线路容量] 过期租约清理失败: %v", err)
+				}
 				if n, err := leaseAgent.ReapExpiredTasks(); err != nil {
 					log.Printf("[任务租约] 回收失败: %v", err)
 				} else if n > 0 {

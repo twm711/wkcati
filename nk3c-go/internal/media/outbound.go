@@ -53,11 +53,11 @@ func (o *OutboundCaller) Dial(ctx context.Context, callID int64) (map[string]int
 	var lineID int64
 	if selector, ok := o.Driver.(interface {
 		ReserveOutboundLine(int64) (agent.OutboundLine, error)
-		ReleaseOutboundLine(int64) error
+		ReleaseOutboundLine(int64, int64) error
 	}); ok {
 		if line, reserveErr := selector.ReserveOutboundLine(callID); reserveErr == nil {
 			lineID, task.CallerID, o.PeerHost, o.PeerPort = line.ID, line.LineNo, line.Host, line.Port
-			defer func() { _ = selector.ReleaseOutboundLine(lineID) }()
+			defer func() { _ = selector.ReleaseOutboundLine(lineID, callID) }()
 		}
 	}
 	if o.PeerHost == "" || o.PeerPort == 0 {
