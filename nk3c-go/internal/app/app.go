@@ -108,9 +108,16 @@ func Build(db *store.DB) *App {
 		// 录音回放：按话务 ID 取 WAV（呼入/外呼通用）
 		api.GET("/recording/:callId", func(c *gin.Context) {
 			callID := c.Param("callId")
+			u := auth.From(c)
 			var rec string
-			err := db.QueryRow(`SELECT record_file FROM cti_call_record WHERE id=?`, callID).Scan(&rec)
-			if err != nil || rec == "" {
+			q := `SELECT c.record_file FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id WHERE c.id=?`
+			args := []interface{}{callID}
+			if !auth.HasRoleP(u, "domainAdmin") {
+				q += ` AND p.tenant_id=?`
+				args = append(args, u.TenantID)
+			}
+			err := db.QueryRow(q, args...).Scan(&rec)
+			if (err != nil || rec == "") && auth.HasRoleP(u, "domainAdmin") {
 				err = db.QueryRow(`SELECT record_file FROM ivr_call_log WHERE id=?`, callID).Scan(&rec)
 			}
 			if err != nil || rec == "" {
@@ -161,6 +168,14 @@ func Build(db *store.DB) *App {
 		if err != nil {
 			rinfo.GinFail(c, rinfo.CodeParam, "项目 ID 非法")
 			return
+		}
+		u := auth.From(c)
+		if !auth.HasRoleP(u, "domainAdmin") {
+			var tenantID int64
+			if err := db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, pid).Scan(&tenantID); err != nil || tenantID != u.TenantID {
+				rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
+				return
+			}
 		}
 		mx, err := export.BuildMatrix(db, pid)
 		if err != nil {

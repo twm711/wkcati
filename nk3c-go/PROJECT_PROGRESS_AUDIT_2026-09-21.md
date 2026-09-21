@@ -114,9 +114,9 @@
 
 ### P0-4：多租户/数据域隔离（已开始修复，仍未完成）
 
-本轮新增 SQLite 007 / MySQL 009：`sys_user.tenant_id`、`prj_project.tenant_id`，登录用户携带 TenantID，项目列表、详情、创建和项目变更接口已增加首层租户边界；domainAdmin 保留跨租户能力。
+本轮新增 SQLite 007 / MySQL 009：`sys_user.tenant_id`、`prj_project.tenant_id`，登录用户携带 TenantID，项目列表、详情、创建和项目变更接口已增加首层租户边界；domainAdmin 保留跨租户能力。进一步将项目租户校验传播到派样、项目导出和录音回放（非 domainAdmin 不再通过话务/项目 ID 访问其他租户）。
 
-仍未完成：样本、话务、答卷、工单、录音、导出、IVR 路由、监控和审计的全链路域过滤；org/group 数据域也没有建模。当前仍不能上线多租户生产。
+仍未完成：样本、话务、答卷、工单、IVR 路由、IVR 流程、监控和审计的全链路域过滤；呼入录音日志目前只有 domainAdmin 可走无项目归属的兼容回退；org/group 数据域也没有建模。当前仍不能上线多租户生产。
 
 ### P0-5：认证与敏感数据安全不足
 

@@ -80,9 +80,13 @@ func (s *Service) Dispatch(c *gin.Context) {
 	// 主事务：串行化取样（生产 MySQL 为 SELECT ... FOR UPDATE SKIP LOCKED）
 	err := s.db.Tx(func(tx *sql.Tx) error {
 		var pstatus string
-		var qid int64
-		if err := tx.QueryRow(`SELECT status,questionnaire_id FROM prj_project WHERE id=?`, projectID).Scan(&pstatus, &qid); err != nil {
+		var qid, tenantID int64
+		if err := tx.QueryRow(`SELECT status,questionnaire_id,tenant_id FROM prj_project WHERE id=?`, projectID).Scan(&pstatus, &qid, &tenantID); err != nil {
 			rinfo.GinFail(c, rinfo.CodeNotFound, fmt.Sprintf("项目 %s 不存在", projectID))
+			return errAbort
+		}
+		if !auth.HasRoleP(u, "domainAdmin") && tenantID != u.TenantID {
+			rinfo.GinFail(c, rinfo.CodeNotFound, "项目不存在")
 			return errAbort
 		}
 		var qstatus string
