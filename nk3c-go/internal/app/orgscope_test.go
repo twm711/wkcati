@@ -63,6 +63,14 @@ func TestOrgGroupAdministrationScope(t *testing.T) {
 	if r := tenantPut(t, ts.URL, "/api/project/1/skills", admin, map[string]interface{}{"requirements": []map[string]interface{}{{"skillId": skillID, "minLevel": 1}}}); r["success"] != true {
 		t.Fatalf("项目技能要求失败: %v", r)
 	}
+	queue := tenantPost(t, ts.URL, "/api/queues", admin, map[string]interface{}{"name": "测试队列", "orgId": id, "groupId": gid, "priority": 10})
+	if queue["success"] != true {
+		t.Fatalf("队列创建失败: %v", queue)
+	}
+	qid := queue["data"].(map[string]interface{})["id"].(float64)
+	if r := tenantPut(t, ts.URL, "/api/project/1/queue", admin, map[string]interface{}{"queueId": qid, "priority": 10}); r["success"] != true {
+		t.Fatalf("项目队列绑定失败: %v", r)
+	}
 }
 
 func itoa(v int64) string {

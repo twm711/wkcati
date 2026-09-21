@@ -80,10 +80,13 @@ func Build(db *store.DB) *App {
 		api.GET("/skills", orgs.ListSkills)
 		api.POST("/skills", orgs.CreateSkill)
 		api.PUT("/users/:uid/skill", orgs.AssignUserSkill)
+		api.GET("/queues", orgs.ListQueues)
+		api.POST("/queues", orgs.CreateQueue)
 
 		prj := api.Group("/project")
 		prj.PUT("/:pid/group", orgs.AssignProjectGroup)
 		prj.PUT("/:pid/skills", orgs.SetProjectSkills)
+		prj.PUT("/:pid/queue", orgs.AssignProjectQueue)
 		prj.GET("", p.List)
 		prj.GET("/:pid", p.Detail)
 		prj.POST("", a.RequireRoles("groupAdmin"), p.Create)

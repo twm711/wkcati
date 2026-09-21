@@ -102,6 +102,105 @@ func (s *Service) ListGroups(c *gin.Context) {
 	rinfo.GinOK(c, out, "ok")
 }
 
+func (s *Service) ListQueues(c *gin.Context) {
+	u := auth.From(c)
+	q := `SELECT id,org_id,group_id,name,priority,status FROM cti_queue WHERE tenant_id=? ORDER BY priority,id`
+	args := []interface{}{u.TenantID}
+	if auth.HasRoleP(u, "domainAdmin") {
+		q = `SELECT id,tenant_id,org_id,group_id,name,priority,status FROM cti_queue ORDER BY priority,id`
+		args = nil
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	defer rows.Close()
+	out := []map[string]interface{}{}
+	for rows.Next() {
+		var id, tenant, org, group int64
+		var name string
+		var priority, status int
+		if auth.HasRoleP(u, "domainAdmin") {
+			if rows.Scan(&id, &tenant, &org, &group, &name, &priority, &status) != nil {
+				continue
+			}
+		} else {
+			if rows.Scan(&id, &org, &group, &name, &priority, &status) != nil {
+				continue
+			}
+			tenant = u.TenantID
+		}
+		out = append(out, gin.H{"id": id, "tenantId": tenant, "orgId": org, "groupId": group, "name": name, "priority": priority, "status": status})
+	}
+	rinfo.GinOK(c, out, "ok")
+}
+
+func (s *Service) CreateQueue(c *gin.Context) {
+	u := auth.From(c)
+	if !auth.HasRoleP(u, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要队列管理权限")
+		return
+	}
+	var req struct {
+		Name     string `json:"name" binding:"required"`
+		OrgID    int64  `json:"orgId" binding:"required"`
+		GroupID  int64  `json:"groupId" binding:"required"`
+		Priority int    `json:"priority"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "name/orgId/groupId 参数错误")
+		return
+	}
+	if req.Priority <= 0 {
+		req.Priority = 100
+	}
+	var tenant int64
+	var groupOrg int64
+	if s.db.QueryRow(`SELECT tenant_id FROM sys_org WHERE id=?`, req.OrgID).Scan(&tenant) != nil || s.db.QueryRow(`SELECT org_id FROM sys_group WHERE id=? AND status=1`, req.GroupID).Scan(&groupOrg) != nil || groupOrg != req.OrgID || (!auth.HasRoleP(u, "domainAdmin") && tenant != u.TenantID) {
+		rinfo.GinFail(c, rinfo.CodePermission, "组织/队列归属不一致")
+		return
+	}
+	res, err := s.db.Exec(`INSERT INTO cti_queue(tenant_id,org_id,group_id,name,priority,status) VALUES(?,?,?,?,?,1)`, tenant, req.OrgID, req.GroupID, req.Name, req.Priority)
+	if err != nil {
+		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
+		return
+	}
+	id, _ := res.LastInsertId()
+	rinfo.GinOK(c, gin.H{"id": id, "tenantId": tenant, "orgId": req.OrgID, "groupId": req.GroupID, "priority": req.Priority}, "队列已创建")
+}
+
+func (s *Service) AssignProjectQueue(c *gin.Context) {
+	u := auth.From(c)
+	if !auth.HasRoleP(u, "domainAdmin", "orgAdmin", "groupAdmin") {
+		rinfo.GinFail(c, rinfo.CodePermission, "需要队列管理权限")
+		return
+	}
+	pid, _ := strconv.ParseInt(c.Param("pid"), 10, 64)
+	var req struct {
+		QueueID  int64 `json:"queueId" binding:"required"`
+		Priority int   `json:"priority"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		rinfo.GinFail(c, rinfo.CodeParam, "queueId 参数错误")
+		return
+	}
+	if req.Priority <= 0 {
+		req.Priority = 100
+	}
+	var pt, qt int64
+	if s.db.QueryRow(`SELECT tenant_id FROM prj_project WHERE id=?`, pid).Scan(&pt) != nil || s.db.QueryRow(`SELECT tenant_id FROM cti_queue WHERE id=? AND status=1`, req.QueueID).Scan(&qt) != nil || pt != qt || (!auth.HasRoleP(u, "domainAdmin") && pt != u.TenantID) {
+		rinfo.GinFail(c, rinfo.CodePermission, "项目/队列租户不一致")
+		return
+	}
+	if s.db.Driver == "mysql" {
+		_, _ = s.db.Exec(`INSERT INTO prj_queue(project_id,queue_id,priority) VALUES(?,?,?) ON DUPLICATE KEY UPDATE queue_id=VALUES(queue_id),priority=VALUES(priority)`, pid, req.QueueID, req.Priority)
+	} else {
+		_, _ = s.db.Exec(`INSERT INTO prj_queue(project_id,queue_id,priority) VALUES(?,?,?) ON CONFLICT(project_id) DO UPDATE SET queue_id=excluded.queue_id,priority=excluded.priority`, pid, req.QueueID, req.Priority)
+	}
+	rinfo.GinOK(c, gin.H{"projectId": pid, "queueId": req.QueueID, "priority": req.Priority}, "项目队列已更新")
+}
+
 func (s *Service) ListSkills(c *gin.Context) {
 	u := auth.From(c)
 	rows, err := s.db.Query(`SELECT id,name,status FROM sys_skill WHERE tenant_id=? ORDER BY id`, u.TenantID)
