@@ -498,13 +498,13 @@ func (s *Service) LineRuntime(c *gin.Context) {
 		}
 	}
 	cutoff := store.TimeFor(s.db.Driver, time.Now().UTC().Add(-time.Duration(minutes)*time.Minute))
-	q := `SELECT COALESCE(c.caller_no,''),COUNT(*),SUM(CASE WHEN c.result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),SUM(CASE WHEN c.result_code='BREAKOFF' THEN 1 ELSE 0 END),MAX(c.end_time) FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id WHERE c.status='CLOSED' AND c.end_time>=?`
+	q := `SELECT COALESCE(c.caller_no,''),COUNT(*),SUM(CASE WHEN c.result_code IN ('SUCCESS','PARTIAL') THEN 1 ELSE 0 END),SUM(CASE WHEN c.result_code='BREAKOFF' THEN 1 ELSE 0 END),MAX(c.end_time),COALESCE(l.rate_limit_per_minute,0),COALESCE(l.failure_streak,0),COALESCE(l.circuit_state,''),COALESCE(l.last_recovery_at,'') FROM cti_call_record c JOIN prj_project p ON p.id=c.project_id LEFT JOIN cti_outbound_line l ON l.tenant_id=p.tenant_id AND l.line_no=c.caller_no WHERE c.status='CLOSED' AND c.end_time>=?`
 	args := []interface{}{cutoff}
 	if !auth.HasRoleP(u, "domainAdmin") {
 		q += ` AND p.tenant_id=?`
 		args = append(args, u.TenantID)
 	}
-	q += ` GROUP BY c.caller_no ORDER BY COUNT(*) DESC`
+	q += ` GROUP BY c.caller_no,l.rate_limit_per_minute,l.failure_streak,l.circuit_state,l.last_recovery_at ORDER BY COUNT(*) DESC`
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
@@ -513,14 +513,34 @@ func (s *Service) LineRuntime(c *gin.Context) {
 	defer rows.Close()
 	out := []map[string]interface{}{}
 	for rows.Next() {
-		var line, last string
-		var total, connected, abandoned int64
-		if rows.Scan(&line, &total, &connected, &abandoned, &last) == nil {
+		var line, last, circuit, recovered string
+		var total, connected, abandoned, rateLimit, failures int64
+		if rows.Scan(&line, &total, &connected, &abandoned, &last, &rateLimit, &failures, &circuit, &recovered) == nil {
 			rate := float64(0)
 			if total > 0 {
 				rate = float64(abandoned) / float64(total) * 100
 			}
-			out = append(out, gin.H{"line": line, "windowMinutes": minutes, "total": total, "connected": connected, "abandoned": abandoned, "abandonRate": rate, "lastCallAt": last})
+			effective := float64(rateLimit)
+			if failures >= 2 {
+				effective *= 0.5
+			} else if recovered != "" {
+				if rt, e := time.Parse(time.RFC3339, recovered); e == nil && time.Since(rt) < 5*time.Minute {
+					effective *= 0.75
+				} else if failures == 0 {
+					effective *= 1.25
+				}
+			} else if failures == 0 {
+				effective *= 1.25
+			}
+			cooldown := 0
+			if recovered != "" {
+				if rt, e := time.Parse(time.RFC3339, recovered); e == nil {
+					if left := int((5*time.Minute - time.Since(rt)).Seconds()); left > 0 {
+						cooldown = left
+					}
+				}
+			}
+			out = append(out, gin.H{"line": line, "windowMinutes": minutes, "total": total, "connected": connected, "abandoned": abandoned, "abandonRate": rate, "lastCallAt": last, "rateLimitPerMinute": rateLimit, "effectiveRatePerMinute": effective, "failureStreak": failures, "circuitState": circuit, "recoveryCooldownSeconds": cooldown})
 		}
 	}
 	rinfo.GinOK(c, out, "ok")
