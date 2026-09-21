@@ -422,7 +422,6 @@ func (s *Service) Revise(c *gin.Context) {
 			return
 		}
 		var newQID int64
-		_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),100)+1 FROM qnr_question`).Scan(&newQID)
 		var qno int64
 		_ = s.db.QueryRow(`SELECT COALESCE(MAX(q_no),0)+1 FROM qnr_question WHERE qnr_id=?`, qid).Scan(&qno)
 		var mn, mx interface{}
@@ -434,15 +433,12 @@ func (s *Service) Revise(c *gin.Context) {
 				mx = *spec.Max
 			}
 		}
-		if _, err := s.db.Exec(`INSERT INTO qnr_question VALUES(?,?,?,?,?,?,?,?)`,
-			newQID, qid, qno, spec.QType, spec.Text, 1, mn, mx); err != nil {
-			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
-			return
-		}
+		qres, err := s.db.Exec(`INSERT INTO qnr_question(qnr_id,q_no,q_type,title,required,min_value,max_value) VALUES(?,?,?,?,?,?,?)`, qid, qno, spec.QType, spec.Text, 1, mn, mx)
+		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+		newQID, err = qres.LastInsertId()
+		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
 		for i, txt := range spec.Options {
-			var oid int64
-			_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),100)+1 FROM qnr_option`).Scan(&oid)
-			s.db.Exec(`INSERT INTO qnr_option VALUES(?,?,?,?,?,?,NULL)`, oid, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT")
+						s.db.Exec(`INSERT INTO qnr_option(question_id,opt_no,opt_text,opt_value,jump,jump_target) VALUES(?,?,?,?,?,NULL)`, newQID, i+1, txt, fmt.Sprintf("V%d", i+1), "NEXT")
 		}
 		added = append(added, newQID)
 	}
@@ -508,12 +504,10 @@ func (s *Service) ImportSamples(c *gin.Context) {
 		rinfo.GinFail(c, rinfo.CodeParam, "phones 与 names 长度不一致")
 		return
 	}
-	var first int64
-	_ = s.db.QueryRow(`SELECT COALESCE(MAX(id),900000)+1 FROM smp_sample`).Scan(&first)
 	made := []int64{}
 	skipped := 0
 	for i, nm := range req.Names {
-		phone := fmt.Sprintf("137%08d", (first+int64(i))%100000000)
+		phone := fmt.Sprintf("137%08d", i%100000000)
 		if req.Phones != nil {
 			phone = req.Phones[i]
 		}
@@ -524,13 +518,12 @@ func (s *Service) ImportSamples(c *gin.Context) {
 			skipped++
 			continue
 		}
-		sid := first + int64(i)
 		var sk int64
 		_ = s.db.QueryRow(`SELECT COALESCE(MAX(shuffle_key),0)+1 FROM smp_sample`).Scan(&sk)
-		if _, err := s.db.Exec(`INSERT INTO smp_sample(id,project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?,?)`, sid, pid, nm, "未知", "IDLE", nil, 0, nil, sk, nil); err != nil {
-			rinfo.GinFail(c, rinfo.CodeInternal, err.Error())
-			return
-		}
+		res, err := s.db.Exec(`INSERT INTO smp_sample(project_id,cust_name,gender,status,ext_json,attempts,last_connected_at,shuffle_key,owner_agent_id) VALUES(?,?,?,?,?,?,?,?,?)`, pid, nm, "未知", "IDLE", nil, 0, nil, sk, nil)
+		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
+		sid, err := res.LastInsertId()
+		if err != nil { rinfo.GinFail(c, rinfo.CodeInternal, err.Error()); return }
 		s.db.Exec(`INSERT INTO smp_phone VALUES(?,?,?,1,1)`, sid, sid, phone)
 		made = append(made, sid)
 	}
